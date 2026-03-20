@@ -56,7 +56,7 @@ The data model is organized around seven core concepts:
 
 ## Documentation
 
-- [System Design Document](docs/BRAIN_3.0_Design_Document.md) — Full architecture, data model, schema, ADHD design principles, and resolved decisions
+- [System Design Document](docs/BRAIN_3_0_Design_Document.md) — Full architecture, data model, schema, ADHD design principles, and resolved decisions
 
 ## License
 

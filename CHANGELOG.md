@@ -11,3 +11,5 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Project repository with README and documentation structure
 - Docker Compose dev environment with PostgreSQL 16-alpine (#1)
 - Developer setup guide with start/stop/reset procedures (#1)
+- FastAPI application scaffold with config, database layer, and health check (#2)
+- Requirements.txt with pinned Phase 1 dependencies (#2)

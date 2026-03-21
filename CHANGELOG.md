@@ -13,3 +13,5 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Developer setup guide with start/stop/reset procedures (#1)
 - FastAPI application scaffold with config, database layer, and health check (#2)
 - Requirements.txt with pinned Phase 1 dependencies (#2)
+- GitHub Actions CI workflow with test and lint jobs (#13)
+- Ruff linter configuration with project standards (#13)

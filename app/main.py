@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.database import SessionLocal
+from app.routers import domains, goals
 
 app = FastAPI(
     title="BRAIN 3.0",
@@ -37,3 +38,7 @@ def health_check() -> dict:
             status_code=503,
             content={"status": "unhealthy", "database": "disconnected"},
         )
+
+
+app.include_router(domains.router, prefix="/api/domains", tags=["Domains"])
+app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])

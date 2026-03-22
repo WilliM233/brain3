@@ -18,3 +18,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SQLAlchemy ORM models for all seven-pillar tables (#3)
 - Alembic migration configuration with app settings integration (#3)
 - Initial migration creating full BRAIN 3.0 schema (#3)
+- Domain CRUD endpoints with list, detail, create, update, delete (#4)
+- Goal CRUD endpoints with domain_id and status filters (#4)
+- Pydantic schema pattern: Create, Update, Response, DetailResponse (#4)
+- Test suite with 29 tests using SQLite in-memory database (#4)

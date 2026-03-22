@@ -1,0 +1,422 @@
+"""SQLAlchemy ORM models for the BRAIN 3.0 seven-pillar data model."""
+
+import uuid
+from datetime import date, datetime
+from uuid import uuid4
+
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+# ---------------------------------------------------------------------------
+# Association table: task_tags
+# ---------------------------------------------------------------------------
+
+class TaskTag(Base):
+    """Many-to-many link between tasks and tags."""
+
+    __tablename__ = "task_tags"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pillar 1: Domains
+# ---------------------------------------------------------------------------
+
+class Domain(Base):
+    """Top-level life area (House, Network, Finances, Health, etc.)."""
+
+    __tablename__ = "domains"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(String)
+    sort_order: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+
+    # Relationships
+    goals: Mapped[list["Goal"]] = relationship(
+        back_populates="domain", cascade="all, delete-orphan",
+    )
+    routines: Mapped[list["Routine"]] = relationship(
+        back_populates="domain", cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pillar 2: Goals
+# ---------------------------------------------------------------------------
+
+class Goal(Base):
+    """Desired outcome tied to a domain."""
+
+    __tablename__ = "goals"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'achieved', 'abandoned')",
+            name="ck_goals_status",
+        ),
+    )
+
+    # Relationships
+    domain: Mapped["Domain"] = relationship(back_populates="goals")
+    projects: Mapped[list["Project"]] = relationship(
+        back_populates="goal", cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pillar 3: Projects
+# ---------------------------------------------------------------------------
+
+class Project(Base):
+    """Concrete initiative that advances a goal."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="not_started")
+    deadline: Mapped[date | None] = mapped_column(Date)
+    progress_pct: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('not_started', 'active', 'blocked', 'completed', 'abandoned')",
+            name="ck_projects_status",
+        ),
+        CheckConstraint(
+            "progress_pct >= 0 AND progress_pct <= 100",
+            name="ck_projects_progress_pct",
+        ),
+    )
+
+    # Relationships
+    goal: Mapped["Goal"] = relationship(back_populates="projects")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pillar 4: Tasks
+# ---------------------------------------------------------------------------
+
+class Task(Base):
+    """Actionable item, optionally tied to a project."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    cognitive_type: Mapped[str | None] = mapped_column(String)
+    energy_cost: Mapped[int | None] = mapped_column(Integer)
+    activation_friction: Mapped[int | None] = mapped_column(Integer)
+    context_required: Mapped[str | None] = mapped_column(String)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    recurrence_rule: Mapped[str | None] = mapped_column(String)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'active', 'completed', 'skipped', 'deferred')",
+            name="ck_tasks_status",
+        ),
+        CheckConstraint(
+            "cognitive_type IN ("
+            "'hands_on', 'communication', 'decision', 'errand', 'admin', 'focus_work'"
+            ") OR cognitive_type IS NULL",
+            name="ck_tasks_cognitive_type",
+        ),
+        CheckConstraint(
+            "energy_cost BETWEEN 1 AND 5 OR energy_cost IS NULL",
+            name="ck_tasks_energy_cost",
+        ),
+        CheckConstraint(
+            "activation_friction BETWEEN 1 AND 5 OR activation_friction IS NULL",
+            name="ck_tasks_activation_friction",
+        ),
+        Index("ix_tasks_status", "status"),
+        Index("ix_tasks_cognitive_type", "cognitive_type"),
+        Index("ix_tasks_energy_cost", "energy_cost"),
+    )
+
+    # Relationships
+    project: Mapped["Project | None"] = relationship(back_populates="tasks")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="task_tags", back_populates="tasks",
+    )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="task")
+
+
+# ---------------------------------------------------------------------------
+# Pillar 5: Tags
+# ---------------------------------------------------------------------------
+
+class Tag(Base):
+    """Lightweight label for cross-cutting task categorisation."""
+
+    __tablename__ = "tags"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    color: Mapped[str | None] = mapped_column(String)
+
+    # Relationships
+    tasks: Mapped[list["Task"]] = relationship(
+        secondary="task_tags", back_populates="tags",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pillar 6: Routines & Schedule
+# ---------------------------------------------------------------------------
+
+class Routine(Base):
+    """Recurring habit tied to a domain."""
+
+    __tablename__ = "routines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    frequency: Mapped[str] = mapped_column(String, nullable=False)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0)
+    best_streak: Mapped[int] = mapped_column(Integer, default=0)
+    last_completed: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    energy_cost: Mapped[int | None] = mapped_column(Integer)
+    activation_friction: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "frequency IN ('daily', 'weekdays', 'weekends', 'weekly', 'custom')",
+            name="ck_routines_frequency",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'paused', 'retired')",
+            name="ck_routines_status",
+        ),
+        CheckConstraint(
+            "energy_cost BETWEEN 1 AND 5 OR energy_cost IS NULL",
+            name="ck_routines_energy_cost",
+        ),
+        CheckConstraint(
+            "activation_friction BETWEEN 1 AND 5 OR activation_friction IS NULL",
+            name="ck_routines_activation_friction",
+        ),
+        Index("ix_routines_status", "status"),
+    )
+
+    # Relationships
+    domain: Mapped["Domain"] = relationship(back_populates="routines")
+    schedules: Mapped[list["RoutineSchedule"]] = relationship(
+        back_populates="routine", cascade="all, delete-orphan",
+    )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="routine")
+
+
+class RoutineSchedule(Base):
+    """When a routine should occur (day/time preferences)."""
+
+    __tablename__ = "routine_schedule"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    routine_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="CASCADE"), nullable=False,
+    )
+    day_of_week: Mapped[str | None] = mapped_column(String)
+    time_of_day: Mapped[str | None] = mapped_column(String)
+    preferred_window: Mapped[str | None] = mapped_column(String)
+
+    # Relationships
+    routine: Mapped["Routine"] = relationship(back_populates="schedules")
+
+
+# ---------------------------------------------------------------------------
+# Pillar 7a: State Check-ins
+# ---------------------------------------------------------------------------
+
+class StateCheckin(Base):
+    """Point-in-time self-assessment of energy, mood, and focus."""
+
+    __tablename__ = "state_checkins"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    checkin_type: Mapped[str] = mapped_column(String, nullable=False)
+    energy_level: Mapped[int | None] = mapped_column(Integer)
+    mood: Mapped[int | None] = mapped_column(Integer)
+    focus_level: Mapped[int | None] = mapped_column(Integer)
+    freeform_note: Mapped[str | None] = mapped_column(Text)
+    context: Mapped[str | None] = mapped_column(String)
+    logged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "checkin_type IN ('morning', 'midday', 'evening', 'micro', 'freeform')",
+            name="ck_state_checkins_type",
+        ),
+        CheckConstraint(
+            "energy_level BETWEEN 1 AND 5 OR energy_level IS NULL",
+            name="ck_state_checkins_energy_level",
+        ),
+        CheckConstraint(
+            "mood BETWEEN 1 AND 5 OR mood IS NULL",
+            name="ck_state_checkins_mood",
+        ),
+        CheckConstraint(
+            "focus_level BETWEEN 1 AND 5 OR focus_level IS NULL",
+            name="ck_state_checkins_focus_level",
+        ),
+    )
+
+    # Relationships
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="checkin")
+
+
+# ---------------------------------------------------------------------------
+# Pillar 7b: Activity Log
+# ---------------------------------------------------------------------------
+
+class ActivityLog(Base):
+    """Record of an action taken — completed task, skipped routine, check-in, etc."""
+
+    __tablename__ = "activity_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
+    )
+    routine_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="SET NULL"),
+    )
+    checkin_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("state_checkins.id", ondelete="SET NULL"),
+    )
+    action_type: Mapped[str] = mapped_column(String, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    energy_before: Mapped[int | None] = mapped_column(Integer)
+    energy_after: Mapped[int | None] = mapped_column(Integer)
+    mood_rating: Mapped[int | None] = mapped_column(Integer)
+    friction_actual: Mapped[int | None] = mapped_column(Integer)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    logged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "action_type IN ("
+            "'completed', 'skipped', 'deferred', 'started', 'reflected', 'checked_in'"
+            ")",
+            name="ck_activity_log_action_type",
+        ),
+        CheckConstraint(
+            "energy_before BETWEEN 1 AND 5 OR energy_before IS NULL",
+            name="ck_activity_log_energy_before",
+        ),
+        CheckConstraint(
+            "energy_after BETWEEN 1 AND 5 OR energy_after IS NULL",
+            name="ck_activity_log_energy_after",
+        ),
+        CheckConstraint(
+            "mood_rating BETWEEN 1 AND 5 OR mood_rating IS NULL",
+            name="ck_activity_log_mood_rating",
+        ),
+        CheckConstraint(
+            "friction_actual BETWEEN 1 AND 5 OR friction_actual IS NULL",
+            name="ck_activity_log_friction_actual",
+        ),
+        Index("ix_activity_log_logged_at", "logged_at"),
+    )
+
+    # Relationships
+    task: Mapped["Task | None"] = relationship(back_populates="activity_logs")
+    routine: Mapped["Routine | None"] = relationship(back_populates="activity_logs")
+    checkin: Mapped["StateCheckin | None"] = relationship(back_populates="activity_logs")

@@ -40,22 +40,12 @@ class GoalResponse(BaseModel):
     updated_at: datetime
 
 
-class ProjectResponse(BaseModel):
-    """Minimal project schema for nesting in GoalDetailResponse.
-
-    Full schema comes in TICKET-05 — this forward-declares enough
-    for the detail endpoint to work (returns empty list until then).
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    title: str
-    status: str
-    created_at: datetime
-
-
 class GoalDetailResponse(GoalResponse):
     """Goal with nested projects — returned by GET /api/goals/{id}."""
 
     projects: list[ProjectResponse] = []
+
+
+from app.schemas.projects import ProjectResponse  # noqa: E402
+
+GoalDetailResponse.model_rebuild()

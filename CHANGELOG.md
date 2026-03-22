@@ -22,3 +22,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Goal CRUD endpoints with domain_id and status filters (#4)
 - Pydantic schema pattern: Create, Update, Response, DetailResponse (#4)
 - Test suite with 29 tests using SQLite in-memory database (#4)
+- Project CRUD endpoints with goal_id, status, has_deadline, and overdue filters (#5)
+- Task CRUD endpoints with composable ADHD-aware filters (#5)
+- Task filters: energy cost range, friction range, cognitive type, context, due dates, overdue, standalone (#5)
+- Pydantic validators for 1-5 scale fields (energy_cost, activation_friction) (#5)

@@ -15,3 +15,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Requirements.txt with pinned Phase 1 dependencies (#2)
 - GitHub Actions CI workflow with test and lint jobs (#13)
 - Ruff linter configuration with project standards (#13)
+- SQLAlchemy ORM models for all seven-pillar tables (#3)
+- Alembic migration configuration with app settings integration (#3)
+- Initial migration creating full BRAIN 3.0 schema (#3)

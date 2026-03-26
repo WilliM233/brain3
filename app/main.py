@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.database import SessionLocal
-from app.routers import domains, goals, projects, tasks
+from app.routers import domains, goals, projects, tags, tasks
 
 app = FastAPI(
     title="BRAIN 3.0",
@@ -44,3 +44,5 @@ app.include_router(domains.router, prefix="/api/domains", tags=["Domains"])
 app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(tags.router, prefix="/api/tags", tags=["Tags"])
+app.include_router(tags.task_tags_router, prefix="/api/tasks", tags=["Task Tags"])

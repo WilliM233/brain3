@@ -108,4 +108,12 @@ def make_task(client: TestClient, **overrides) -> dict:
     return resp.json()
 
 
+def make_tag(client: TestClient, **overrides) -> dict:
+    """Create a tag via the API and return the response JSON."""
+    data = {"name": "test-tag", **overrides}
+    resp = client.post("/api/tags", json=data)
+    assert resp.status_code in (200, 201)
+    return resp.json()
+
+
 FAKE_UUID = str(uuid.uuid4())

@@ -75,20 +75,12 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
 
-class TagResponse(BaseModel):
-    """Minimal tag schema for nesting in TaskDetailResponse.
-
-    Full schema comes in TICKET-06.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    color: str | None = None
-
-
 class TaskDetailResponse(TaskResponse):
     """Task with nested tags — returned by GET /api/tasks/{id}."""
 
-    tags: list[TagResponse] = []
+    tags: list["TagResponse"] = []
+
+
+from app.schemas.tags import TagResponse  # noqa: E402
+
+TaskDetailResponse.model_rebuild()

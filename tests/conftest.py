@@ -108,6 +108,19 @@ def make_task(client: TestClient, **overrides) -> dict:
     return resp.json()
 
 
+def make_routine(client: TestClient, domain_id: str, **overrides) -> dict:
+    """Create a routine via the API and return the response JSON."""
+    data = {
+        "domain_id": domain_id,
+        "title": "Test Routine",
+        "frequency": "daily",
+        **overrides,
+    }
+    resp = client.post("/api/routines", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 def make_tag(client: TestClient, **overrides) -> dict:
     """Create a tag via the API and return the response JSON."""
     data = {"name": "test-tag", **overrides}

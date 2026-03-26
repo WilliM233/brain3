@@ -129,4 +129,12 @@ def make_tag(client: TestClient, **overrides) -> dict:
     return resp.json()
 
 
+def make_checkin(client: TestClient, **overrides) -> dict:
+    """Create a check-in via the API and return the response JSON."""
+    data = {"checkin_type": "morning", **overrides}
+    resp = client.post("/api/checkins", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 FAKE_UUID = str(uuid.uuid4())

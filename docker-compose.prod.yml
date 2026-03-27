@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: brain3-db
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - brain3_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brain3}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - brain3-net
+
+  api:
+    build: .
+    container_name: brain3-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${API_PORT:-8000}:${API_PORT:-8000}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - brain3-net
+
+networks:
+  brain3-net:
+    driver: bridge
+
+volumes:
+  brain3_prod_data:

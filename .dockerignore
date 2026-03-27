@@ -1,0 +1,56 @@
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+
+# Documentation
+docs/
+*.md
+
+# CI/CD
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Docker (don't include compose/dockerfile in build context)
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+backups/
+
+# Scripts not needed in API image
+scripts/backup.sh
+scripts/smoke-test.sh
+
+# Linting
+.ruff_cache/
+
+# Claude
+.claude/

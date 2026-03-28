@@ -101,7 +101,19 @@ def update_activity(
     if not entry:
         raise HTTPException(status_code=404, detail="Activity log entry not found")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    # Validate referenced entities exist (only for fields in the payload)
+    updates = payload.model_dump(exclude_unset=True)
+    if updates.get("task_id") is not None:
+        if not db.query(Task).filter(Task.id == updates["task_id"]).first():
+            raise HTTPException(status_code=400, detail="Task not found")
+    if updates.get("routine_id") is not None:
+        if not db.query(Routine).filter(Routine.id == updates["routine_id"]).first():
+            raise HTTPException(status_code=400, detail="Routine not found")
+    if updates.get("checkin_id") is not None:
+        if not db.query(StateCheckin).filter(StateCheckin.id == updates["checkin_id"]).first():
+            raise HTTPException(status_code=400, detail="Check-in not found")
+
+    for field, value in updates.items():
         setattr(entry, field, value)
 
     # Enforce at-most-one-reference on the post-merge state

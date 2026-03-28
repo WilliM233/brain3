@@ -343,6 +343,37 @@ class TestUpdateActivity:
         assert body["task_id"] is None
         assert body["routine_id"] == routine["id"]
 
+    def test_patch_invalid_task_ref(self, client):
+        entry = make_activity(client)
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"task_id": FAKE_UUID},
+        )
+        assert resp.status_code == 400
+
+    def test_patch_invalid_routine_ref(self, client):
+        entry = make_activity(client)
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"routine_id": FAKE_UUID},
+        )
+        assert resp.status_code == 400
+
+    def test_patch_invalid_checkin_ref(self, client):
+        entry = make_activity(client)
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"checkin_id": FAKE_UUID},
+        )
+        assert resp.status_code == 400
+
+    def test_patch_clear_ref_allowed(self, client):
+        """Setting a ref to null should not trigger existence validation."""
+        task = make_task(client)
+        entry = make_activity(client, task_id=task["id"])
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"task_id": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] is None
+
 
 # ---------------------------------------------------------------------------
 # DELETE /api/activity/{id}

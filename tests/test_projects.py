@@ -210,6 +210,24 @@ class TestUpdateProject:
         )
         assert resp.status_code == 422
 
+    def test_patch_project_reparent_to_different_goal(self, client):
+        """Move a project from one goal to another via PATCH."""
+        domain = make_domain(client)
+        goal_a = make_goal(client, domain["id"], title="Goal A")
+        goal_b = make_goal(client, domain["id"], title="Goal B")
+        project = make_project(client, goal_a["id"])
+
+        resp = client.patch(
+            f"/api/projects/{project['id']}", json={"goal_id": goal_b["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["goal_id"] == goal_b["id"]
+
+        # Verify it shows under goal B's detail
+        detail = client.get(f"/api/goals/{goal_b['id']}").json()
+        project_ids = [p["id"] for p in detail["projects"]]
+        assert project["id"] in project_ids
+
     def test_patch_project_not_found(self, client):
         resp = client.patch(f"/api/projects/{FAKE_UUID}", json={"title": "X"})
         assert resp.status_code == 404

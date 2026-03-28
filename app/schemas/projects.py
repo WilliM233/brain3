@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+
+ProjectStatus = Literal["not_started", "active", "blocked", "completed", "abandoned"]
 
 
 class ProjectCreate(BaseModel):
@@ -14,7 +17,7 @@ class ProjectCreate(BaseModel):
     goal_id: UUID
     title: str
     description: str | None = None
-    status: str = "not_started"
+    status: ProjectStatus = "not_started"
     deadline: date | None = None
 
 
@@ -24,7 +27,7 @@ class ProjectUpdate(BaseModel):
     goal_id: UUID | None = None
     title: str | None = None
     description: str | None = None
-    status: str | None = None
+    status: ProjectStatus | None = None
     deadline: date | None = None
 
 
@@ -37,7 +40,7 @@ class ProjectResponse(BaseModel):
     goal_id: UUID
     title: str
     description: str | None = None
-    status: str
+    status: ProjectStatus
     deadline: date | None = None
     progress_pct: int
     created_at: datetime

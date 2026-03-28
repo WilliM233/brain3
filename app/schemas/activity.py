@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+ActionType = Literal[
+    "completed", "skipped", "deferred", "started", "reflected", "checked_in"
+]
 
 
 class ActivityLogCreate(BaseModel):
@@ -14,7 +19,7 @@ class ActivityLogCreate(BaseModel):
     task_id: UUID | None = None
     routine_id: UUID | None = None
     checkin_id: UUID | None = None
-    action_type: str
+    action_type: ActionType
     notes: str | None = None
     energy_before: int | None = None
     energy_after: int | None = None
@@ -45,7 +50,7 @@ class ActivityLogUpdate(BaseModel):
     task_id: UUID | None = None
     routine_id: UUID | None = None
     checkin_id: UUID | None = None
-    action_type: str | None = None
+    action_type: ActionType | None = None
     notes: str | None = None
     energy_before: int | None = None
     energy_after: int | None = None
@@ -71,7 +76,7 @@ class ActivityLogResponse(BaseModel):
     task_id: UUID | None = None
     routine_id: UUID | None = None
     checkin_id: UUID | None = None
-    action_type: str
+    action_type: ActionType
     notes: str | None = None
     energy_before: int | None = None
     energy_after: int | None = None

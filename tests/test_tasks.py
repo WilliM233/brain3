@@ -76,6 +76,18 @@ class TestCreateTask:
         )
         assert resp.status_code == 422
 
+    def test_create_task_invalid_status(self, client):
+        resp = client.post(
+            "/api/tasks", json={"title": "Bad", "status": "INVALID"},
+        )
+        assert resp.status_code == 422
+
+    def test_create_task_invalid_cognitive_type(self, client):
+        resp = client.post(
+            "/api/tasks", json={"title": "Bad", "cognitive_type": "INVALID"},
+        )
+        assert resp.status_code == 422
+
 
 # ---------------------------------------------------------------------------
 # GET /api/tasks — composable filters
@@ -271,6 +283,20 @@ class TestUpdateTask:
         task = make_task(client)
         resp = client.patch(
             f"/api/tasks/{task['id']}", json={"energy_cost": 7}
+        )
+        assert resp.status_code == 422
+
+    def test_patch_task_invalid_status(self, client):
+        task = make_task(client)
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"status": "INVALID"},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_task_invalid_cognitive_type(self, client):
+        task = make_task(client)
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"cognitive_type": "INVALID"},
         )
         assert resp.status_code == 422
 

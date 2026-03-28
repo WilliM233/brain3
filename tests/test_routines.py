@@ -81,6 +81,25 @@ class TestCreateRoutine:
         )
         assert resp.status_code == 422
 
+    def test_create_routine_invalid_frequency(self, client):
+        domain = make_domain(client)
+        resp = client.post(
+            "/api/routines",
+            json={"domain_id": domain["id"], "title": "Bad", "frequency": "INVALID"},
+        )
+        assert resp.status_code == 422
+
+    def test_create_routine_invalid_status(self, client):
+        domain = make_domain(client)
+        resp = client.post(
+            "/api/routines",
+            json={
+                "domain_id": domain["id"], "title": "Bad", "frequency": "daily",
+                "status": "INVALID",
+            },
+        )
+        assert resp.status_code == 422
+
 
 # ---------------------------------------------------------------------------
 # GET /api/routines
@@ -209,6 +228,22 @@ class TestUpdateRoutine:
         routine = make_routine(client, domain["id"])
         resp = client.patch(
             f"/api/routines/{routine['id']}", json={"energy_cost": 7},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_routine_invalid_frequency(self, client):
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        resp = client.patch(
+            f"/api/routines/{routine['id']}", json={"frequency": "INVALID"},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_routine_invalid_status(self, client):
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        resp = client.patch(
+            f"/api/routines/{routine['id']}", json={"status": "INVALID"},
         )
         assert resp.status_code == 422
 

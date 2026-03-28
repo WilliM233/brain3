@@ -121,6 +121,13 @@ class TestCreateActivity:
         )
         assert resp.status_code == 422
 
+    def test_create_invalid_action_type(self, client):
+        resp = client.post(
+            "/api/activity",
+            json={"action_type": "INVALID"},
+        )
+        assert resp.status_code == 422
+
 
 # ---------------------------------------------------------------------------
 # GET /api/activity
@@ -293,6 +300,13 @@ class TestUpdateActivity:
         entry = make_activity(client)
         resp = client.patch(
             f"/api/activity/{entry['id']}", json={"friction_actual": 10},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_invalid_action_type(self, client):
+        entry = make_activity(client)
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"action_type": "INVALID"},
         )
         assert resp.status_code == 422
 

@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+TaskStatus = Literal["pending", "active", "completed", "skipped", "deferred"]
+CognitiveType = Literal[
+    "hands_on", "communication", "decision", "errand", "admin", "focus_work"
+]
 
 
 class TaskCreate(BaseModel):
@@ -14,8 +20,8 @@ class TaskCreate(BaseModel):
     project_id: UUID | None = None
     title: str
     description: str | None = None
-    status: str = "pending"
-    cognitive_type: str | None = None
+    status: TaskStatus = "pending"
+    cognitive_type: CognitiveType | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
     context_required: str | None = None
@@ -37,8 +43,8 @@ class TaskUpdate(BaseModel):
     project_id: UUID | None = None
     title: str | None = None
     description: str | None = None
-    status: str | None = None
-    cognitive_type: str | None = None
+    status: TaskStatus | None = None
+    cognitive_type: CognitiveType | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
     context_required: str | None = None
@@ -63,8 +69,8 @@ class TaskResponse(BaseModel):
     project_id: UUID | None = None
     title: str
     description: str | None = None
-    status: str
-    cognitive_type: str | None = None
+    status: TaskStatus
+    cognitive_type: CognitiveType | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
     context_required: str | None = None

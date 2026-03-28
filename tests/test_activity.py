@@ -121,6 +121,13 @@ class TestCreateActivity:
         )
         assert resp.status_code == 422
 
+    def test_create_notes_too_long(self, client):
+        resp = client.post(
+            "/api/activity",
+            json={"action_type": "reflected", "notes": "x" * 5001},
+        )
+        assert resp.status_code == 422
+
     def test_create_invalid_action_type(self, client):
         resp = client.post(
             "/api/activity",

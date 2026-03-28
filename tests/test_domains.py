@@ -32,6 +32,22 @@ class TestCreateDomain:
         assert body["color"] == "#00FF00"
         assert body["sort_order"] == 5
 
+    def test_create_domain_name_too_long(self, client):
+        resp = client.post("/api/domains", json={"name": "x" * 201})
+        assert resp.status_code == 422
+
+    def test_create_domain_color_too_long(self, client):
+        resp = client.post(
+            "/api/domains", json={"name": "Valid", "color": "#FF00FF00"},
+        )
+        assert resp.status_code == 422
+
+    def test_create_domain_description_too_long(self, client):
+        resp = client.post(
+            "/api/domains", json={"name": "Valid", "description": "x" * 5001},
+        )
+        assert resp.status_code == 422
+
     def test_create_domain_missing_name(self, client):
         resp = client.post("/api/domains", json={})
         assert resp.status_code == 422
@@ -107,6 +123,13 @@ class TestUpdateDomain:
         body = resp.json()
         assert body["name"] == "Keep"
         assert body["color"] == "#0000FF"
+
+    def test_patch_domain_name_too_long(self, client):
+        domain = make_domain(client)
+        resp = client.patch(
+            f"/api/domains/{domain['id']}", json={"name": "x" * 201},
+        )
+        assert resp.status_code == 422
 
     def test_patch_domain_not_found(self, client):
         resp = client.patch(f"/api/domains/{FAKE_UUID}", json={"name": "X"})

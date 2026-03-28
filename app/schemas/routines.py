@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 RoutineFrequency = Literal["daily", "weekdays", "weekends", "weekly", "custom"]
 RoutineStatus = Literal["active", "paused", "retired"]
@@ -20,8 +20,8 @@ class RoutineCreate(BaseModel):
     """Fields required to create a routine."""
 
     domain_id: UUID
-    title: str
-    description: str | None = None
+    title: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     frequency: RoutineFrequency
     status: RoutineStatus = "active"
     energy_cost: int | None = None
@@ -40,8 +40,8 @@ class RoutineUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
     domain_id: UUID | None = None
-    title: str | None = None
-    description: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     frequency: RoutineFrequency | None = None
     status: RoutineStatus | None = None
     energy_cost: int | None = None
@@ -90,9 +90,9 @@ class RoutineDetailResponse(RoutineResponse):
 class RoutineScheduleCreate(BaseModel):
     """Fields required to add a schedule entry to a routine."""
 
-    day_of_week: str
-    time_of_day: str
-    preferred_window: str | None = None
+    day_of_week: str = Field(max_length=50)
+    time_of_day: str = Field(max_length=50)
+    preferred_window: str | None = Field(default=None, max_length=50)
 
 
 class RoutineScheduleResponse(BaseModel):

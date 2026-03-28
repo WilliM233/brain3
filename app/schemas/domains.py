@@ -5,24 +5,24 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DomainCreate(BaseModel):
     """Fields required to create a domain."""
 
-    name: str
-    description: str | None = None
-    color: str | None = None
+    name: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    color: str | None = Field(default=None, max_length=7)
     sort_order: int = 0
 
 
 class DomainUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
-    name: str | None = None
-    description: str | None = None
-    color: str | None = None
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    color: str | None = Field(default=None, max_length=7)
     sort_order: int | None = None
 
 

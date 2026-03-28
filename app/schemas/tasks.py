@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 TaskStatus = Literal["pending", "active", "completed", "skipped", "deferred"]
 CognitiveType = Literal[
@@ -18,15 +18,15 @@ class TaskCreate(BaseModel):
     """Fields required to create a task."""
 
     project_id: UUID | None = None
-    title: str
-    description: str | None = None
+    title: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: TaskStatus = "pending"
     cognitive_type: CognitiveType | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
-    context_required: str | None = None
+    context_required: str | None = Field(default=None, max_length=100)
     due_date: date | None = None
-    recurrence_rule: str | None = None
+    recurrence_rule: str | None = Field(default=None, max_length=500)
 
     @field_validator("energy_cost", "activation_friction")
     @classmethod
@@ -41,15 +41,15 @@ class TaskUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
     project_id: UUID | None = None
-    title: str | None = None
-    description: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: TaskStatus | None = None
     cognitive_type: CognitiveType | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
-    context_required: str | None = None
+    context_required: str | None = Field(default=None, max_length=100)
     due_date: date | None = None
-    recurrence_rule: str | None = None
+    recurrence_rule: str | None = Field(default=None, max_length=500)
 
     @field_validator("energy_cost", "activation_friction")
     @classmethod

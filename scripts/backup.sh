@@ -28,6 +28,9 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# Restrict file creation to owner-only (mode 600 for files, 700 for directories)
+umask 077
+
 # Ensure backup directory exists
 mkdir -p "$BACKUP_PATH"
 

@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16.13-alpine
         env:
           POSTGRES_USER: brain3_test
           POSTGRES_PASSWORD: brain3_test

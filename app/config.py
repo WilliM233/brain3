@@ -6,9 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """BRAIN 3.0 application settings, loaded from environment variables / .env file."""
 
-    POSTGRES_USER: str = "brain3"
-    POSTGRES_PASSWORD: str = "brain3_dev"
-    POSTGRES_DB: str = "brain3_dev"
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
 

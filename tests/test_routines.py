@@ -227,6 +227,19 @@ class TestUpdateRoutine:
         assert body["title"] == "Keep"
         assert body["energy_cost"] == 1
 
+    def test_patch_routine_reparent_to_different_domain(self, client):
+        """Move a routine from one domain to another via PATCH."""
+        domain_a = make_domain(client, name="Domain A")
+        domain_b = make_domain(client, name="Domain B")
+        routine = make_routine(client, domain_a["id"])
+
+        resp = client.patch(
+            f"/api/routines/{routine['id']}",
+            json={"domain_id": domain_b["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["domain_id"] == domain_b["id"]
+
     def test_patch_routine_not_found(self, client):
         resp = client.patch(f"/api/routines/{FAKE_UUID}", json={"title": "X"})
         assert resp.status_code == 404

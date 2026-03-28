@@ -299,6 +299,33 @@ class TestUpdateTask:
         assert body["title"] == "Keep"
         assert body["energy_cost"] == 1
 
+    def test_patch_task_reparent_to_different_project(self, client):
+        """Move a task from one project to another via PATCH."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project_a = make_project(client, goal["id"], title="Project A")
+        project_b = make_project(client, goal["id"], title="Project B")
+        task = make_task(client, project_id=project_a["id"])
+
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"project_id": project_b["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["project_id"] == project_b["id"]
+
+    def test_patch_task_make_standalone(self, client):
+        """Detach a task from its project to make it standalone."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        task = make_task(client, project_id=project["id"])
+
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"project_id": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["project_id"] is None
+
     def test_patch_task_not_found(self, client):
         resp = client.patch(f"/api/tasks/{FAKE_UUID}", json={"title": "X"})
         assert resp.status_code == 404

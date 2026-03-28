@@ -1,6 +1,13 @@
 """Tests for Domain CRUD endpoints."""
 
-from tests.conftest import FAKE_UUID, make_domain, make_goal
+from tests.conftest import (
+    FAKE_UUID,
+    make_domain,
+    make_goal,
+    make_project,
+    make_tag,
+    make_task,
+)
 
 # ---------------------------------------------------------------------------
 # POST /api/domains
@@ -158,6 +165,26 @@ class TestDeleteDomain:
 
         resp = client.get(f"/api/goals/{goal['id']}")
         assert resp.status_code == 404
+
+    def test_delete_domain_cascades_full_chain(self, client):
+        """Delete a domain and verify the full chain is removed:
+        domain → goals → projects → tasks → task-tags."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        task = make_task(client, project_id=project["id"])
+        tag = make_tag(client, name="cascade-test")
+        client.post(f"/api/tasks/{task['id']}/tags/{tag['id']}")
+
+        client.delete(f"/api/domains/{domain['id']}")
+
+        assert client.get(f"/api/goals/{goal['id']}").status_code == 404
+        assert client.get(f"/api/projects/{project['id']}").status_code == 404
+        assert client.get(f"/api/tasks/{task['id']}").status_code == 404
+        # Tag itself survives, but the task-tag association is gone
+        assert client.get(f"/api/tags/{tag['id']}").status_code == 200
+        tagged_tasks = client.get(f"/api/tags/{tag['id']}/tasks").json()
+        assert len(tagged_tasks) == 0
 
     def test_delete_domain_not_found(self, client):
         resp = client.delete(f"/api/domains/{FAKE_UUID}")

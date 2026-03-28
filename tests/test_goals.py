@@ -1,6 +1,6 @@
 """Tests for Goal CRUD endpoints."""
 
-from tests.conftest import FAKE_UUID, make_domain, make_goal
+from tests.conftest import FAKE_UUID, make_domain, make_goal, make_project, make_task
 
 # ---------------------------------------------------------------------------
 # POST /api/goals
@@ -165,6 +165,23 @@ class TestUpdateGoal:
         )
         assert resp.status_code == 422
 
+    def test_patch_goal_reparent_to_different_domain(self, client):
+        """Move a goal from one domain to another via PATCH."""
+        domain_a = make_domain(client, name="Domain A")
+        domain_b = make_domain(client, name="Domain B")
+        goal = make_goal(client, domain_a["id"])
+
+        resp = client.patch(
+            f"/api/goals/{goal['id']}", json={"domain_id": domain_b["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["domain_id"] == domain_b["id"]
+
+        # Verify it shows under domain B's detail
+        detail = client.get(f"/api/domains/{domain_b['id']}").json()
+        goal_ids = [g["id"] for g in detail["goals"]]
+        assert goal["id"] in goal_ids
+
     def test_patch_goal_not_found(self, client):
         resp = client.patch(f"/api/goals/{FAKE_UUID}", json={"title": "X"})
         assert resp.status_code == 404
@@ -184,6 +201,18 @@ class TestDeleteGoal:
 
         resp = client.get(f"/api/goals/{goal['id']}")
         assert resp.status_code == 404
+
+    def test_delete_goal_cascades_projects_and_tasks(self, client):
+        """Delete a goal and verify child projects and tasks are removed."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        task = make_task(client, project_id=project["id"])
+
+        client.delete(f"/api/goals/{goal['id']}")
+
+        assert client.get(f"/api/projects/{project['id']}").status_code == 404
+        assert client.get(f"/api/tasks/{task['id']}").status_code == 404
 
     def test_delete_goal_not_found(self, client):
         resp = client.delete(f"/api/goals/{FAKE_UUID}")

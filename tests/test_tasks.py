@@ -312,6 +312,40 @@ class TestUpdateTask:
         )
         assert resp.status_code == 422
 
+    def test_patch_task_completed_at_auto_set(self, client):
+        task = make_task(client)
+        assert task["completed_at"] is None
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"status": "completed"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "completed"
+        assert body["completed_at"] is not None
+
+    def test_patch_task_completed_at_cleared_on_revert(self, client):
+        task = make_task(client)
+        client.patch(f"/api/tasks/{task['id']}", json={"status": "completed"})
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"status": "active"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "active"
+        assert body["completed_at"] is None
+
+    def test_patch_task_completed_at_preserved(self, client):
+        task = make_task(client)
+        completed = client.patch(
+            f"/api/tasks/{task['id']}", json={"status": "completed"},
+        ).json()
+        resp = client.patch(
+            f"/api/tasks/{task['id']}", json={"title": "Updated"},
+        )
+        body = resp.json()
+        assert body["title"] == "Updated"
+        assert body["completed_at"] == completed["completed_at"]
+
 
 # ---------------------------------------------------------------------------
 # DELETE /api/tasks/{id}

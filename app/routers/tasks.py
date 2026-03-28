@@ -77,7 +77,7 @@ def list_tasks(
     if overdue is True:
         query = query.filter(
             Task.due_date < date.today(),
-            Task.status.notin_(["completed", "skipped", "abandoned"]),
+            Task.status.notin_(["completed", "skipped"]),
         )
 
     return query.order_by(Task.created_at).all()

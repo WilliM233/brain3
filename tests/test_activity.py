@@ -317,6 +317,32 @@ class TestUpdateActivity:
         )
         assert resp.status_code == 422
 
+    def test_patch_multiple_refs_rejected(self, client):
+        """Adding a second reference to an entry with an existing one is rejected."""
+        task = make_task(client)
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        entry = make_activity(client, task_id=task["id"])
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"routine_id": routine["id"]},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_replace_ref_allowed(self, client):
+        """Clearing old ref and setting a new one in the same PATCH is allowed."""
+        task = make_task(client)
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        entry = make_activity(client, task_id=task["id"])
+        resp = client.patch(
+            f"/api/activity/{entry['id']}",
+            json={"task_id": None, "routine_id": routine["id"]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["task_id"] is None
+        assert body["routine_id"] == routine["id"]
+
 
 # ---------------------------------------------------------------------------
 # DELETE /api/activity/{id}

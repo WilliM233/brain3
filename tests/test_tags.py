@@ -33,6 +33,14 @@ class TestCreateTag:
         assert second.status_code == 200
         assert second.json()["id"] == first.json()["id"]
 
+    def test_create_tag_name_too_long(self, client):
+        resp = client.post("/api/tags", json={"name": "x" * 101})
+        assert resp.status_code == 422
+
+    def test_create_tag_color_too_long(self, client):
+        resp = client.post("/api/tags", json={"name": "valid", "color": "#FF00FF00"})
+        assert resp.status_code == 422
+
     def test_create_tag_missing_name(self, client):
         resp = client.post("/api/tags", json={})
         assert resp.status_code == 422

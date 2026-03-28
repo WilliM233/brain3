@@ -49,6 +49,15 @@ class TestCreateProject:
         resp = client.post("/api/projects", json={"goal_id": goal["id"]})
         assert resp.status_code == 422
 
+    def test_create_project_title_too_long(self, client):
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        resp = client.post(
+            "/api/projects",
+            json={"goal_id": goal["id"], "title": "x" * 201},
+        )
+        assert resp.status_code == 422
+
     def test_create_project_invalid_status(self, client):
         domain = make_domain(client)
         goal = make_goal(client, domain["id"])

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ActionType = Literal[
     "completed", "skipped", "deferred", "started", "reflected", "checked_in"
@@ -20,7 +20,7 @@ class ActivityLogCreate(BaseModel):
     routine_id: UUID | None = None
     checkin_id: UUID | None = None
     action_type: ActionType
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=5000)
     energy_before: int | None = None
     energy_after: int | None = None
     mood_rating: int | None = None
@@ -51,7 +51,7 @@ class ActivityLogUpdate(BaseModel):
     routine_id: UUID | None = None
     checkin_id: UUID | None = None
     action_type: ActionType | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=5000)
     energy_before: int | None = None
     energy_after: int | None = None
     mood_rating: int | None = None

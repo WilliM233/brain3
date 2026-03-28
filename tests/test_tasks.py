@@ -76,6 +76,18 @@ class TestCreateTask:
         )
         assert resp.status_code == 422
 
+    def test_create_task_title_too_long(self, client):
+        resp = client.post(
+            "/api/tasks", json={"title": "x" * 201},
+        )
+        assert resp.status_code == 422
+
+    def test_create_task_context_too_long(self, client):
+        resp = client.post(
+            "/api/tasks", json={"title": "Valid", "context_required": "x" * 101},
+        )
+        assert resp.status_code == 422
+
     def test_create_task_invalid_status(self, client):
         resp = client.post(
             "/api/tasks", json={"title": "Bad", "status": "INVALID"},

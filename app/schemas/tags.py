@@ -2,21 +2,21 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TagCreate(BaseModel):
     """Fields required to create a tag."""
 
-    name: str
-    color: str | None = None
+    name: str = Field(max_length=100)
+    color: str | None = Field(default=None, max_length=7)
 
 
 class TagUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
-    name: str | None = None
-    color: str | None = None
+    name: str | None = Field(default=None, max_length=100)
+    color: str | None = Field(default=None, max_length=7)
 
 
 class TagResponse(BaseModel):

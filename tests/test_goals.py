@@ -43,6 +43,14 @@ class TestCreateGoal:
         )
         assert resp.status_code == 422
 
+    def test_create_goal_title_too_long(self, client):
+        domain = make_domain(client)
+        resp = client.post(
+            "/api/goals",
+            json={"domain_id": domain["id"], "title": "x" * 201},
+        )
+        assert resp.status_code == 422
+
     def test_create_goal_invalid_status(self, client):
         domain = make_domain(client)
         resp = client.post(

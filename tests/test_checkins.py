@@ -70,6 +70,20 @@ class TestCreateCheckin:
         )
         assert resp.status_code == 422
 
+    def test_create_freeform_note_too_long(self, client):
+        resp = client.post(
+            "/api/checkins",
+            json={"checkin_type": "freeform", "freeform_note": "x" * 5001},
+        )
+        assert resp.status_code == 422
+
+    def test_create_context_too_long(self, client):
+        resp = client.post(
+            "/api/checkins",
+            json={"checkin_type": "morning", "context": "x" * 101},
+        )
+        assert resp.status_code == 422
+
     def test_create_invalid_checkin_type(self, client):
         resp = client.post(
             "/api/checkins", json={"checkin_type": "INVALID"},

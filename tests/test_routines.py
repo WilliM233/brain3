@@ -81,6 +81,14 @@ class TestCreateRoutine:
         )
         assert resp.status_code == 422
 
+    def test_create_routine_title_too_long(self, client):
+        domain = make_domain(client)
+        resp = client.post(
+            "/api/routines",
+            json={"domain_id": domain["id"], "title": "x" * 201, "frequency": "daily"},
+        )
+        assert resp.status_code == 422
+
     def test_create_routine_invalid_frequency(self, client):
         domain = make_domain(client)
         resp = client.post(

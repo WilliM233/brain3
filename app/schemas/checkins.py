@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CheckinType = Literal["morning", "midday", "evening", "micro", "freeform"]
 
@@ -18,8 +18,8 @@ class CheckinCreate(BaseModel):
     energy_level: int | None = None
     mood: int | None = None
     focus_level: int | None = None
-    freeform_note: str | None = None
-    context: str | None = None
+    freeform_note: str | None = Field(default=None, max_length=5000)
+    context: str | None = Field(default=None, max_length=100)
 
     @field_validator("energy_level", "mood", "focus_level")
     @classmethod
@@ -37,8 +37,8 @@ class CheckinUpdate(BaseModel):
     energy_level: int | None = None
     mood: int | None = None
     focus_level: int | None = None
-    freeform_note: str | None = None
-    context: str | None = None
+    freeform_note: str | None = Field(default=None, max_length=5000)
+    context: str | None = Field(default=None, max_length=100)
 
     @field_validator("energy_level", "mood", "focus_level")
     @classmethod

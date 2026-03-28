@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 ProjectStatus = Literal["not_started", "active", "blocked", "completed", "abandoned"]
 
@@ -15,8 +15,8 @@ class ProjectCreate(BaseModel):
     """Fields required to create a project."""
 
     goal_id: UUID
-    title: str
-    description: str | None = None
+    title: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: ProjectStatus = "not_started"
     deadline: date | None = None
 
@@ -25,8 +25,8 @@ class ProjectUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
     goal_id: UUID | None = None
-    title: str | None = None
-    description: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: ProjectStatus | None = None
     deadline: date | None = None
 

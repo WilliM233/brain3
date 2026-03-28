@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 GoalStatus = Literal["active", "paused", "achieved", "abandoned"]
 
@@ -15,8 +15,8 @@ class GoalCreate(BaseModel):
     """Fields required to create a goal."""
 
     domain_id: UUID
-    title: str
-    description: str | None = None
+    title: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: GoalStatus = "active"
 
 
@@ -24,8 +24,8 @@ class GoalUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
     domain_id: UUID | None = None
-    title: str | None = None
-    description: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     status: GoalStatus | None = None
 
 

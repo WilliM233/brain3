@@ -391,3 +391,48 @@ class TestDeleteActivity:
     def test_delete_not_found(self, client):
         resp = client.delete(f"/api/activity/{FAKE_UUID}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Reference integrity — FK SET NULL on parent deletion
+# ---------------------------------------------------------------------------
+
+class TestActivityReferenceIntegrity:
+
+    def test_task_deletion_nullifies_activity_reference(self, client):
+        """Deleting a task sets activity_log.task_id to NULL, not cascading."""
+        task = make_task(client)
+        entry = make_activity(client, task_id=task["id"])
+
+        client.delete(f"/api/tasks/{task['id']}")
+
+        resp = client.get(f"/api/activity/{entry['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] is None
+
+    def test_routine_deletion_nullifies_activity_reference(self, client):
+        """Deleting a routine sets activity_log.routine_id to NULL."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        entry = make_activity(
+            client, routine_id=routine["id"], action_type="completed",
+        )
+
+        client.delete(f"/api/routines/{routine['id']}")
+
+        resp = client.get(f"/api/activity/{entry['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["routine_id"] is None
+
+    def test_checkin_deletion_nullifies_activity_reference(self, client):
+        """Deleting a check-in sets activity_log.checkin_id to NULL."""
+        checkin = make_checkin(client)
+        entry = make_activity(
+            client, checkin_id=checkin["id"], action_type="checked_in",
+        )
+
+        client.delete(f"/api/checkins/{checkin['id']}")
+
+        resp = client.get(f"/api/activity/{entry['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["checkin_id"] is None

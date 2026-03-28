@@ -1,17 +1,21 @@
-# BRAIN 3.0 — Deployment Guide
+# Production Deployment Guide
 
-Production deployment of BRAIN 3.0 on TrueNAS (or any Docker-capable host).
+Deploy BRAIN 3.0 to TrueNAS or any Docker-capable Linux server. This guide covers initial setup, verification, backups, MCP connection, and ongoing maintenance.
+
+---
 
 ## Prerequisites
 
-- Docker Engine and Docker Compose V2 (TrueNAS SCALE includes these)
-- Git (to clone/update the repository)
-- `jq` (for the smoke test script)
-- Network access: API port (default 8000) must be reachable from client machines
+- **Docker Engine** and **Docker Compose V2** — TrueNAS SCALE includes both. For other Linux servers, install [Docker Engine](https://docs.docker.com/engine/install/).
+- **Git** — for cloning and updating the repository.
+- **`jq`** — required by the smoke test script. Install with your package manager (`apt install jq`, `apk add jq`, etc.).
+- **Network access** — the API port (default 8000) must be reachable from client machines on your local network.
 
-## Initial Setup
+---
 
-### 1. Clone the Repository
+## Environment Configuration
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/WilliM233/brain3.git
@@ -19,126 +23,165 @@ cd brain3
 git checkout develop
 ```
 
-### 2. Configure Environment
+### 2. Create the environment file
 
 ```bash
 cp .env.production.example .env
 ```
 
-Edit `.env` and set:
-- **`POSTGRES_PASSWORD`** — use a strong, unique password
-- **`BACKUP_PATH`** — TrueNAS dataset for backups (e.g., `/mnt/pool/backups/brain3`)
-- Adjust `API_PORT` if 8000 conflicts with another service
+### 3. Edit `.env` with production values
 
-### 3. Create the Backup Directory
+```bash
+nano .env
+```
+
+**Required changes:**
+
+| Variable | What to set | Why |
+|----------|------------|-----|
+| `POSTGRES_PASSWORD` | A strong, unique password | The dev default is not safe for production. Generate one: `openssl rand -base64 24` |
+| `CORS_ORIGINS` | `http://TRUENAS_IP:8000` | Replace `TRUENAS_IP` with your server's actual IP address |
+| `BACKUP_PATH` | Your TrueNAS backup dataset path | Default is `/mnt/pool/backups/brain3` — adjust to match your pool layout |
+
+**Do not change:**
+
+| Variable | Production value | Why |
+|----------|-----------------|-----|
+| `POSTGRES_HOST` | `db` | Must match the Docker Compose service name — not `localhost` |
+| `API_HOST` | `0.0.0.0` | Binds to all interfaces so the API is reachable over the network |
+
+For the full variable reference, see [environment-variables.md](environment-variables.md).
+
+> **Note:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` have no defaults in the application code. If any of these are missing from `.env`, the API will fail to start with a validation error. This is intentional — production credentials must be set explicitly.
+
+---
+
+## Deploy the Stack
+
+### 1. Create the backup directory
 
 ```bash
 mkdir -p /mnt/pool/backups/brain3
 ```
 
-## Starting the Stack
+### 2. Build and start
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 This will:
-1. Pull the PostgreSQL 16 image (first run only)
-2. Build the API container from the Dockerfile
-3. Start PostgreSQL and wait for it to be healthy
-4. Run Alembic migrations automatically
-5. Start the uvicorn API server
 
-### Verify
+1. Pull the PostgreSQL 16 Alpine image (first run only)
+2. Build the API container from the `Dockerfile`
+3. Start PostgreSQL and wait for it to pass the health check
+4. The API container runs `entrypoint.sh`, which applies Alembic migrations automatically, then starts uvicorn
+
+The production compose runs **both** PostgreSQL and the API as containers on a private bridge network (`brain3-net`). Only the API port is exposed to the host.
+
+### 3. Verify
 
 ```bash
-# Check both containers are running and healthy
 docker compose -f docker-compose.prod.yml ps
+```
 
-# Check API health
+Both `brain3-db` and `brain3-api` should show as running.
+
+Check the health endpoint:
+
+```bash
 curl http://localhost:8000/health
-
-# View logs
-docker compose -f docker-compose.prod.yml logs -f
 ```
 
-## Stopping the Stack
+Expected:
+
+```json
+{"status": "healthy", "database": "connected"}
+```
+
+From another machine on the network:
 
 ```bash
-# Stop containers (preserves database data)
-docker compose -f docker-compose.prod.yml down
-
-# Stop and DELETE all data (destructive — use with caution)
-docker compose -f docker-compose.prod.yml down -v
+curl http://TRUENAS_IP:8000/health
 ```
 
-## Updating the Application
-
-```bash
-git pull origin develop
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-Alembic migrations run automatically on API container startup, so database schema updates are applied with each deploy.
-
-## Backup Configuration
-
-### Manual Backup
-
-```bash
-chmod +x scripts/backup.sh
-./scripts/backup.sh
-```
-
-The script will:
-- Dump the PostgreSQL database from the `brain3-db` container
-- Compress it as `brain3_YYYY-MM-DD_HHMMSS.sql.gz`
-- Store it in `BACKUP_PATH` (from `.env`)
-- Delete backups older than `BACKUP_RETENTION_DAYS` (default: 30)
-- Log results to `BACKUP_PATH/backup.log`
-
-### TrueNAS Cron Setup
-
-1. Open TrueNAS web UI
-2. Navigate to **System → Advanced → Cron Jobs**
-3. Click **Add**
-4. Configure:
-   - **Description:** BRAIN 3.0 Database Backup
-   - **Command:** `/path/to/brain3/scripts/backup.sh`
-   - **Run As User:** root (or a user with Docker access)
-   - **Schedule:** `0 2 * * *` (daily at 2:00 AM)
-5. Save and verify the next day that a backup file appears in your backup path
-
-### Restore from Backup
-
-```bash
-gunzip < /mnt/pool/backups/brain3/brain3_2026-03-27_020000.sql.gz \
-  | docker exec -i brain3-db psql -U brain3 brain3
-```
-
-> **Note:** This restores into the existing database. For a clean restore, drop and
-> recreate the database first, or let Alembic handle schema creation on a fresh volume.
-
-## Smoke Testing
-
-Run the automated smoke test to validate the full API surface:
+### 4. Run the smoke test
 
 ```bash
 chmod +x scripts/smoke-test.sh
 ./scripts/smoke-test.sh http://localhost:8000
 ```
 
-The script tests: health check, domain CRUD, goal creation, project creation, task creation, activity logging, activity summary report, and cleanup of all test entities.
+The smoke test creates and deletes test entities across the full API surface: domains, goals, projects, tasks, activity logging, and reporting. All test data is cleaned up automatically. Exit code 0 means all tests passed.
 
-Exit code 0 means all tests passed. Exit code 1 means a failure occurred.
+---
 
-## MCP Server Connectivity
+## Configure Backups
 
-The MCP server (`brain3-mcp`) runs as a Claude subprocess on your **client machine**, not on TrueNAS. It connects to the API over the network.
+### What the backup script does
 
-### Configure the MCP Server
+`scripts/backup.sh` runs `pg_dump` inside the `brain3-db` container, compresses the output with gzip, and stores it in `BACKUP_PATH`. It then deletes backups older than `BACKUP_RETENTION_DAYS` (default: 30).
 
-Set the `BRAIN3_API_URL` environment variable to point at your TrueNAS host:
+Backup files are created with restrictive permissions (mode 600, owner-only readable) via `umask 077`. The script logs every run to `BACKUP_PATH/backup.log`.
+
+### Manual backup
+
+```bash
+chmod +x scripts/backup.sh
+./scripts/backup.sh
+```
+
+Verify:
+
+```bash
+ls -la /mnt/pool/backups/brain3/
+```
+
+You should see a file like `brain3_2026-03-28_020000.sql.gz`.
+
+### Set up the TrueNAS cron job
+
+1. Open the TrueNAS web UI
+2. Navigate to **System > Advanced > Cron Jobs**
+3. Click **Add**
+4. Configure:
+   - **Description:** BRAIN 3.0 Database Backup
+   - **Command:** `/path/to/brain3/scripts/backup.sh`
+   - **Run As User:** root (or a user with Docker access)
+   - **Schedule:** `0 2 * * *` (daily at 2:00 AM)
+5. Save
+
+Verify the next day that a backup file appeared and the log shows success:
+
+```bash
+tail -5 /mnt/pool/backups/brain3/backup.log
+```
+
+### Restore from backup
+
+```bash
+gunzip < /mnt/pool/backups/brain3/brain3_2026-03-28_020000.sql.gz \
+  | docker exec -i brain3-db psql -U brain3 brain3
+```
+
+This restores into the existing database. For a clean restore, remove the data volume and let Alembic recreate the schema on next startup:
+
+```bash
+docker compose -f docker-compose.prod.yml down -v
+docker compose -f docker-compose.prod.yml up -d --build
+gunzip < /mnt/pool/backups/brain3/brain3_TIMESTAMP.sql.gz \
+  | docker exec -i brain3-db psql -U brain3 brain3
+```
+
+---
+
+## Connecting the MCP
+
+The MCP server ([brain3-mcp](https://github.com/WilliM233/brain3-mcp)) runs as a Claude subprocess on your **client machine**, not on TrueNAS. It connects to the BRAIN 3.0 API over the network.
+
+### Configure Claude Desktop
+
+In your Claude Desktop MCP configuration, point `BRAIN3_API_URL` at your TrueNAS server:
 
 ```json
 {
@@ -154,11 +197,55 @@ Set the `BRAIN3_API_URL` environment variable to point at your TrueNAS host:
 }
 ```
 
-Replace `TRUENAS_IP` with the actual IP address of your TrueNAS server.
+Replace `TRUENAS_IP` with your server's actual IP address and `/path/to/brain3-mcp` with the path to your local clone.
 
-### Verify MCP Connectivity
+### Verify MCP connectivity
 
-Use the `health_check` MCP tool through Claude to confirm the MCP server can reach the API.
+Use the `health_check` MCP tool through Claude to confirm the connection. If it reports healthy, Claude has full access to the BRAIN 3.0 API.
+
+See the [brain3-mcp README](https://github.com/WilliM233/brain3-mcp) for full setup instructions.
+
+---
+
+## CORS Configuration
+
+BRAIN 3.0 uses the `CORS_ORIGINS` environment variable to control which origins are allowed to make cross-origin requests to the API.
+
+Set this to the origin(s) that will access the API. For a TrueNAS deployment accessed by its IP:
+
+```
+CORS_ORIGINS=http://192.168.1.100:8000
+```
+
+Multiple origins are comma-separated:
+
+```
+CORS_ORIGINS=http://192.168.1.100:8000,http://192.168.1.100:3000
+```
+
+In Phase 1 (no web UI), the primary consumer is the MCP server, which makes server-side requests and is not affected by CORS. CORS configuration becomes important in Phase 3 when the web UI is added.
+
+---
+
+## Updating
+
+To deploy a new version:
+
+```bash
+cd /path/to/brain3
+git pull origin develop
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+The API container runs Alembic migrations automatically on startup (`scripts/entrypoint.sh`), so database schema updates are applied with each deploy. Data is preserved — the PostgreSQL volume persists across container rebuilds.
+
+If a migration fails, the API container will exit. Check the logs:
+
+```bash
+docker compose -f docker-compose.prod.yml logs api
+```
+
+---
 
 ## Troubleshooting
 
@@ -168,10 +255,10 @@ Use the `health_check` MCP tool through Claude to confirm the MCP server can rea
 docker compose -f docker-compose.prod.yml logs
 ```
 
-Check for:
-- Missing `.env` file or unconfigured variables
-- Port conflicts (another service on port 8000)
-- Docker daemon not running
+Common causes:
+- **Missing `.env` file** — `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` are required with no defaults. The app will fail with a Pydantic validation error if they're missing.
+- **Port conflict** — Another service on port 8000. Change `API_PORT` in `.env`.
+- **Docker daemon not running** — Start Docker or verify the service is active.
 
 ### Migration fails on startup
 
@@ -180,21 +267,23 @@ docker compose -f docker-compose.prod.yml logs api
 ```
 
 Look for Alembic error output. Common causes:
-- Database not ready yet (should be handled by health check dependency, but check)
-- Migration conflict from manual schema changes
+- **Database not ready** — The compose file uses a health check dependency, but if the database is slow to start, the API may attempt to migrate before it's ready. Restart the API container: `docker compose -f docker-compose.prod.yml restart api`
+- **Migration conflict** — If the database schema was modified manually outside of Alembic, migration state may be inconsistent. Check `alembic current` inside the container.
 
-### API can't reach database
+### API can't reach the database
 
-Verify `POSTGRES_HOST=db` in `.env` — this must match the Docker Compose service name, not `localhost`.
+Verify `POSTGRES_HOST=db` in your `.env` — this must match the Docker Compose service name. In production, the API container connects to PostgreSQL over the `brain3-net` bridge network, not `localhost`.
 
 ### Backup script fails
 
-- Verify the `brain3-db` container is running: `docker ps`
-- Verify backup path exists and is writable: `ls -la /mnt/pool/backups/brain3/`
+- Is the database container running? `docker ps | grep brain3-db`
+- Does the backup path exist and is it writable? `ls -la /mnt/pool/backups/brain3/`
 - Check the backup log: `cat /mnt/pool/backups/brain3/backup.log`
+- Is the container name correct? The script defaults to `brain3-db` (from `DB_CONTAINER_NAME` or the compose file's `container_name`).
 
-### MCP can't connect to API
+### MCP can't connect to the API
 
-- Verify the API is reachable from the client machine: `curl http://TRUENAS_IP:8000/health`
-- Check firewall rules — port 8000 must be open on TrueNAS
-- Verify `BRAIN3_API_URL` is set correctly in your MCP configuration
+1. Is the API reachable from the client machine? `curl http://TRUENAS_IP:8000/health`
+2. Is port 8000 open on TrueNAS? Check firewall rules.
+3. Is `BRAIN3_API_URL` set correctly in your MCP server configuration?
+4. Is the MCP server running? Check Claude Desktop's MCP server status.

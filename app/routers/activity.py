@@ -104,6 +104,14 @@ def update_activity(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(entry, field, value)
 
+    # Enforce at-most-one-reference on the post-merge state
+    refs = sum(v is not None for v in [entry.task_id, entry.routine_id, entry.checkin_id])
+    if refs > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="At most one of task_id, routine_id, or checkin_id may be set",
+        )
+
     db.commit()
     db.refresh(entry)
     return entry

@@ -1,6 +1,6 @@
 """CRUD endpoints for Tasks."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -108,6 +108,12 @@ def update_task(
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
+
+    # Auto-manage completed_at based on status transitions
+    if task.status == "completed" and task.completed_at is None:
+        task.completed_at = datetime.now(tz=timezone.utc)
+    elif task.status != "completed" and task.completed_at is not None:
+        task.completed_at = None
 
     db.commit()
     db.refresh(task)

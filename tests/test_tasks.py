@@ -222,6 +222,18 @@ class TestListTasks:
         assert len(tasks) == 1
         assert tasks[0]["title"] == "Overdue"
 
+    def test_filter_overdue_excludes_skipped(self, client):
+        """Overdue filter excludes completed and skipped, but includes deferred."""
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        make_task(client, title="Skipped", due_date=yesterday, status="skipped")
+        make_task(client, title="Deferred", due_date=yesterday, status="deferred")
+
+        resp = client.get("/api/tasks?overdue=true")
+        tasks = resp.json()
+        titles = [t["title"] for t in tasks]
+        assert "Skipped" not in titles
+        assert "Deferred" in titles
+
     def test_composable_filters(self, client):
         make_task(
             client, title="Match",

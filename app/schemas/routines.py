@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+RoutineFrequency = Literal["daily", "weekdays", "weekends", "weekly", "custom"]
+RoutineStatus = Literal["active", "paused", "retired"]
 
 # ---------------------------------------------------------------------------
 # Routine schemas
@@ -18,8 +22,8 @@ class RoutineCreate(BaseModel):
     domain_id: UUID
     title: str
     description: str | None = None
-    frequency: str
-    status: str = "active"
+    frequency: RoutineFrequency
+    status: RoutineStatus = "active"
     energy_cost: int | None = None
     activation_friction: int | None = None
 
@@ -38,8 +42,8 @@ class RoutineUpdate(BaseModel):
     domain_id: UUID | None = None
     title: str | None = None
     description: str | None = None
-    frequency: str | None = None
-    status: str | None = None
+    frequency: RoutineFrequency | None = None
+    status: RoutineStatus | None = None
     energy_cost: int | None = None
     activation_friction: int | None = None
 
@@ -61,8 +65,8 @@ class RoutineResponse(BaseModel):
     domain_id: UUID
     title: str
     description: str | None = None
-    frequency: str
-    status: str
+    frequency: RoutineFrequency
+    status: RoutineStatus
     energy_cost: int | None = None
     activation_friction: int | None = None
     current_streak: int

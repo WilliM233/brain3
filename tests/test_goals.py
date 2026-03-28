@@ -43,6 +43,14 @@ class TestCreateGoal:
         )
         assert resp.status_code == 422
 
+    def test_create_goal_invalid_status(self, client):
+        domain = make_domain(client)
+        resp = client.post(
+            "/api/goals",
+            json={"domain_id": domain["id"], "title": "Bad", "status": "INVALID"},
+        )
+        assert resp.status_code == 422
+
     def test_create_goal_invalid_domain(self, client):
         resp = client.post(
             "/api/goals",
@@ -140,6 +148,14 @@ class TestUpdateGoal:
         body = resp.json()
         assert body["title"] == "Keep"
         assert body["status"] == "paused"
+
+    def test_patch_goal_invalid_status(self, client):
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        resp = client.patch(
+            f"/api/goals/{goal['id']}", json={"status": "INVALID"},
+        )
+        assert resp.status_code == 422
 
     def test_patch_goal_not_found(self, client):
         resp = client.patch(f"/api/goals/{FAKE_UUID}", json={"title": "X"})

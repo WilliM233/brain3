@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+CheckinType = Literal["morning", "midday", "evening", "micro", "freeform"]
 
 
 class CheckinCreate(BaseModel):
     """Fields required to log a check-in. Only checkin_type is mandatory."""
 
-    checkin_type: str
+    checkin_type: CheckinType
     energy_level: int | None = None
     mood: int | None = None
     focus_level: int | None = None
@@ -30,7 +33,7 @@ class CheckinCreate(BaseModel):
 class CheckinUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
 
-    checkin_type: str | None = None
+    checkin_type: CheckinType | None = None
     energy_level: int | None = None
     mood: int | None = None
     focus_level: int | None = None
@@ -52,7 +55,7 @@ class CheckinResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    checkin_type: str
+    checkin_type: CheckinType
     energy_level: int | None = None
     mood: int | None = None
     focus_level: int | None = None

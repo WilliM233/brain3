@@ -70,6 +70,12 @@ class TestCreateCheckin:
         )
         assert resp.status_code == 422
 
+    def test_create_invalid_checkin_type(self, client):
+        resp = client.post(
+            "/api/checkins", json={"checkin_type": "INVALID"},
+        )
+        assert resp.status_code == 422
+
 
 # ---------------------------------------------------------------------------
 # GET /api/checkins
@@ -196,6 +202,13 @@ class TestUpdateCheckin:
         checkin = make_checkin(client)
         resp = client.patch(
             f"/api/checkins/{checkin['id']}", json={"focus_level": 10},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_checkin_invalid_type(self, client):
+        checkin = make_checkin(client)
+        resp = client.patch(
+            f"/api/checkins/{checkin['id']}", json={"checkin_type": "INVALID"},
         )
         assert resp.status_code == 422
 

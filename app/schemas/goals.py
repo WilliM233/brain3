@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+
+GoalStatus = Literal["active", "paused", "achieved", "abandoned"]
 
 
 class GoalCreate(BaseModel):
@@ -14,7 +17,7 @@ class GoalCreate(BaseModel):
     domain_id: UUID
     title: str
     description: str | None = None
-    status: str = "active"
+    status: GoalStatus = "active"
 
 
 class GoalUpdate(BaseModel):
@@ -23,7 +26,7 @@ class GoalUpdate(BaseModel):
     domain_id: UUID | None = None
     title: str | None = None
     description: str | None = None
-    status: str | None = None
+    status: GoalStatus | None = None
 
 
 class GoalResponse(BaseModel):
@@ -35,7 +38,7 @@ class GoalResponse(BaseModel):
     domain_id: UUID
     title: str
     description: str | None = None
-    status: str
+    status: GoalStatus
     created_at: datetime
     updated_at: datetime
 

@@ -49,6 +49,15 @@ class TestCreateProject:
         resp = client.post("/api/projects", json={"goal_id": goal["id"]})
         assert resp.status_code == 422
 
+    def test_create_project_invalid_status(self, client):
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        resp = client.post(
+            "/api/projects",
+            json={"goal_id": goal["id"], "title": "Bad", "status": "INVALID"},
+        )
+        assert resp.status_code == 422
+
     def test_create_project_invalid_goal(self, client):
         resp = client.post(
             "/api/projects",
@@ -182,6 +191,15 @@ class TestUpdateProject:
         body = resp.json()
         assert body["title"] == "Keep"
         assert body["status"] == "blocked"
+
+    def test_patch_project_invalid_status(self, client):
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        resp = client.patch(
+            f"/api/projects/{project['id']}", json={"status": "INVALID"},
+        )
+        assert resp.status_code == 422
 
     def test_patch_project_not_found(self, client):
         resp = client.patch(f"/api/projects/{FAKE_UUID}", json={"title": "X"})

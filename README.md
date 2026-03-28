@@ -2,62 +2,146 @@
 
 **AI-Powered Personal Operating System for ADHD**
 
+[![CI](https://github.com/willim233/brain3/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/willim233/brain3/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+---
+
+## What Is BRAIN 3.0?
+
 BRAIN 3.0 is a personal life management system designed to work with how an ADHD brain actually functions. It pairs a structured data model with Claude as an AI partner that has full context about your goals, projects, tasks, routines, energy patterns, and behavioral history.
 
-The system has initiative, not just memory. It proactively surfaces the right task at the right time, matches work to your current capacity, tracks routines as behavioral commitments, and learns your patterns over time.
+Most task managers treat you like a filing cabinet with legs: store things, sort things, check things off. BRAIN 3.0 is different. It tracks *how* you work — your energy cost, cognitive type, activation friction, and context requirements — so that the right task surfaces at the right time, matched to your current capacity. The system has initiative, not just memory.
 
-## Version History
+This is Phase 1: the core data layer and API. Claude connects through the [Model Context Protocol (MCP)](https://github.com/willim233/brain3-mcp) and acts as a partner — not an assistant. It reads your patterns, notices neglected areas of life, pushes back when you're overloading yourself, and reasons about what actually makes sense right now. For the full design rationale, see the [System Design Document](docs/BRAIN_3_0_Design_Document.md).
 
-| Version | Description |
-|---------|-------------|
-| 1.0 | Static HTML page with a data.js file |
-| 2.0 | SQLite + Flask with Claude MCP access. Work-focused note-taking and task management. |
-| **3.0** | PostgreSQL + FastAPI + Claude MCP. Full personal life operating system with ADHD-aware design. |
+## Architecture — The Seven Pillars
 
-## Architecture
+The data model is organized around seven core concepts that give the system a complete picture of your life:
 
-- **Database**: PostgreSQL 16+ in Docker on TrueNAS
-- **API**: FastAPI (Python 3.12+) with auto-generated OpenAPI spec
-- **AI Partner**: Claude via MCP with full CRUD and reasoning access
-- **Notifications**: Home Assistant push notifications and voice via Assist
-- **Scheduling**: APScheduler for proactive behaviors
+| Pillar | What It Captures |
+|--------|-----------------|
+| **Domains** | Life areas (House, Health, Finances, Network) as a filtering and reporting layer |
+| **Goals** | Enduring outcomes that give everything else meaning |
+| **Projects** | Bounded efforts with deadlines and progress tracking, nested under goals |
+| **Tasks** | Atoms of action with ADHD-aware metadata: energy cost, cognitive type, activation friction, context |
+| **Routines** | Behavioral commitments with streak tracking and pattern break detection |
+| **Check-ins** | Energy, mood, and focus snapshots — the continuous self-awareness layer |
+| **Activity Log** | What happened and how it felt, powering pattern recognition over time |
 
-## The Seven Pillars
+Everything flows from domains down through goals and projects to tasks, with routines running in parallel and the activity log recording what actually happened. Claude uses this full picture to reason about priorities, spot avoidance patterns, and match work to capacity.
 
-The data model is organized around seven core concepts:
+## Tech Stack
 
-1. **Domains** — Life areas (House, Network, Finances, Health) as a filtering layer
-2. **Goals** — Enduring outcomes that give everything else meaning
-3. **Projects** — Bounded efforts with a start, end, and progress tracking
-4. **Tasks** — Atoms of action with ADHD-aware metadata (energy cost, cognitive type, activation friction, context)
-5. **Routines** — Behavioral patterns with streak tracking and pattern break detection
-6. **Mindfulness & State** — Continuous self-awareness layer (check-ins, energy, mood, focus)
-7. **Activity Log** — Record of what happened and how it felt, powering pattern recognition
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Language | Python | 3.12+ |
+| API Framework | FastAPI | 0.135+ |
+| Database | PostgreSQL | 16+ |
+| ORM | SQLAlchemy | 2.0+ |
+| Migrations | Alembic | latest stable |
+| Validation | Pydantic | 2.x |
+| MCP Transport | Anthropic Python MCP SDK | latest stable |
+| Deployment | Docker on TrueNAS | Docker Compose v2 |
 
-## Phased Delivery
+## Quick Start (Development)
+
+### Prerequisites
+
+- **Python 3.12+** — [python.org/downloads](https://www.python.org/downloads/)
+- **Docker Desktop** — [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) (for PostgreSQL)
+- **Git** — [git-scm.com](https://git-scm.com/)
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/willim233/brain3.git
+cd brain3
+cp .env.example .env
+```
+
+The default `.env` values work for local development — no changes needed.
+
+### 2. Start PostgreSQL
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+Verify it's running:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+You should see `brain3-postgres-dev` with status `healthy`.
+
+### 3. Install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 4. Run database migrations
+
+```bash
+alembic upgrade head
+```
+
+This creates all seven pillar tables and their relationships.
+
+### 5. Start the API
+
+```bash
+uvicorn app.main:app --reload
+```
+
+### 6. Verify
+
+Open [http://localhost:8000/health](http://localhost:8000/health) — you should see:
+
+```json
+{"status": "healthy", "database": "connected"}
+```
+
+The interactive API docs are at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+## Connecting Claude (MCP)
+
+BRAIN 3.0's primary interface is Claude, connected through the Model Context Protocol. The MCP server lives in a separate repository:
+
+**[brain3-mcp](https://github.com/willim233/brain3-mcp)** — Claude MCP integration for BRAIN 3.0
+
+The MCP server translates Claude's tool calls into BRAIN 3.0 API requests, giving Claude full CRUD access to all seven pillars plus filtered queries, activity logging, and reporting endpoints. See the brain3-mcp README for setup instructions.
+
+Once connected, Claude can manage your goals, create tasks matched to your energy level, track routine streaks, log activities, and surface patterns in how you work and feel over time.
+
+## Project Status
+
+**v1.0.0 — Phase 1 Complete**
+
+Phase 1 delivers the core data loop: database, API, and MCP integration. All seven pillar entities have full CRUD, filtered queries, and reporting endpoints. The system is stable — 283 tests passing, lint clean, CI green.
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| **Phase 1** | Core loop — Database, FastAPI, MCP. Claude conversation only. | 🔨 In Progress |
-| **Phase 2** | Proactive — Scheduler, HA integration, push notifications | Planned |
+| **Phase 1** | Core loop — Database, FastAPI, MCP. Claude conversation only. | **Complete** |
+| **Phase 2** | Proactive — Scheduler, Home Assistant integration, push notifications | Planned |
 | **Phase 3** | Web UI — Mobile-first dashboard, quick entry, visual reporting | Planned |
-| **Phase 4+** | Expand — New domains, voice, deeper HA automations, calendar | Planned |
+| **Phase 4+** | Expand — New domains, voice, calendar, deeper HA automations | Planned |
 
-## Key Decisions
+**What's not here yet:** No web UI, no authentication (single-user behind firewall), no scheduler or push notifications. Those are Phase 2 and 3.
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Database | PostgreSQL | Concurrent access, LISTEN/NOTIFY, JSON columns, full-text search |
-| API | FastAPI | OpenAPI spec maps 1:1 to MCP tools, async native |
-| Recurrence | RRULE | iCalendar standard via python-dateutil, handles all edge cases |
-| Auth | Deferred to Phase 3 | Single-user behind firewall; middleware pattern ready for future |
-| Backups | Nightly pg_dump | 30-day retention to TrueNAS dataset |
-| Migration | None | BRAIN 2.0 stays work-focused. 3.0 is a clean start. |
+## Contributing
 
-## Documentation
+BRAIN 3.0 follows a ticket-driven workflow with strict branching and PR conventions. See [CLAUDE.md](CLAUDE.md) for the full developer guide, including:
 
-- [System Design Document](docs/BRAIN_3_0_Design_Document.md) — Full architecture, data model, schema, ADHD design principles, and resolved decisions
+- Branch strategy (`develop` -> feature branches -> PR)
+- Conventional commit format
+- PR template and review process
+- Code standards (PEP 8, type hints, testing requirements)
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).

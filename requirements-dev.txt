@@ -1,0 +1,5 @@
+# BRAIN 3.0 — Development Dependencies
+-r requirements.txt
+ruff==0.11.6
+pytest==8.3.5
+httpx==0.28.1

@@ -1,0 +1,4 @@
+# Ensure shell scripts always use LF line endings, even on Windows.
+# Without this, git core.autocrlf=true converts LF → CRLF on checkout,
+# which breaks scripts running inside Linux containers.
+*.sh text eol=lf

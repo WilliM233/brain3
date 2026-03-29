@@ -18,7 +18,7 @@ COPY app/ app/
 
 # Copy and prepare entrypoint
 COPY scripts/entrypoint.sh scripts/entrypoint.sh
-RUN chmod +x scripts/entrypoint.sh
+RUN sed -i 's/\r$//' scripts/entrypoint.sh && chmod +x scripts/entrypoint.sh
 
 # Switch to non-root user
 USER brain3

@@ -3,10 +3,10 @@
 **AI-Powered Personal Operating System for ADHD**
 
 [![CI](https://github.com/willim233/brain3/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/willim233/brain3/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 ---
-
+   
 ## What Is BRAIN 3.0?
 
 BRAIN 3.0 is a personal life management system designed to work with how an ADHD brain actually functions. It pairs a structured data model with Claude as an AI partner that has full context about your goals, projects, tasks, routines, energy patterns, and behavioral history.
@@ -43,6 +43,17 @@ Everything flows from domains down through goals and projects to tasks, with rou
 | Validation | Pydantic | 2.x |
 | MCP Transport | Anthropic Python MCP SDK | latest stable |
 | Deployment | Docker on TrueNAS | Docker Compose v2 |
+
+## Production Deployment
+
+To deploy BRAIN 3.0 on a home server (TrueNAS or any Docker-capable host):
+```bash
+git clone -b main https://github.com/WilliM233/brain3.git
+cd brain3
+cp .env.production.example .env
+# Edit .env with strong credentials — do not use dev defaults
+docker compose -f docker-compose.prod.yml up -d --build
+```
 
 ## Quick Start (Development)
 
@@ -122,7 +133,7 @@ Once connected, Claude can manage your goals, create tasks matched to your energ
 
 **v1.0.0 — Phase 1 Complete**
 
-Phase 1 delivers the core data loop: database, API, and MCP integration. All seven pillar entities have full CRUD, filtered queries, and reporting endpoints. The system is stable — 283 tests passing, lint clean, CI green.
+Phase 1 delivers the core data loop: database, API, and MCP integration. All seven pillar entities have full CRUD, filtered queries, and reporting endpoints. The system is stable — 293 tests passing, lint clean, CI green.
 
 | Phase | Focus | Status |
 |-------|-------|--------|
@@ -144,4 +155,4 @@ BRAIN 3.0 follows a ticket-driven workflow with strict branching and PR conventi
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE).

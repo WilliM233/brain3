@@ -102,13 +102,13 @@ Behavioral patterns with streak tracking. Routines have additional endpoints bey
 
 State snapshots (energy, mood, focus). CRUD with list filtering.
 
-**List filters:** `checkin_type` (morning, midday, evening, micro, freeform), `after`, `before` (date range)
+**List filters:** `checkin_type` (morning, midday, evening, micro, freeform), `context`, `logged_after`, `logged_before` (date range)
 
 ### Activity Log — `/api/activity`
 
 Record of what happened and how it felt. Each entry can reference a task, routine, and/or check-in.
 
-**List filters:** `task_id`, `routine_id`, `checkin_id`, `action_type`, `after`, `before` (date range)
+**List filters:** `action_type`, `task_id`, `routine_id`, `logged_after`, `logged_before` (date range), `has_task`, `has_routine`
 
 ---
 

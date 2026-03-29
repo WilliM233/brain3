@@ -41,11 +41,11 @@ fail_step() {
 cleanup() {
     echo ""
     echo "Cleaning up test entities..."
-    [ -n "$ACTIVITY_ID" ] && curl -s -X DELETE "$BASE_URL/api/activity/$ACTIVITY_ID" > /dev/null 2>&1 && echo "  Deleted activity $ACTIVITY_ID" || true
-    [ -n "$TASK_ID" ] && curl -s -X DELETE "$BASE_URL/api/tasks/$TASK_ID" > /dev/null 2>&1 && echo "  Deleted task $TASK_ID" || true
-    [ -n "$PROJECT_ID" ] && curl -s -X DELETE "$BASE_URL/api/projects/$PROJECT_ID" > /dev/null 2>&1 && echo "  Deleted project $PROJECT_ID" || true
-    [ -n "$GOAL_ID" ] && curl -s -X DELETE "$BASE_URL/api/goals/$GOAL_ID" > /dev/null 2>&1 && echo "  Deleted goal $GOAL_ID" || true
-    [ -n "$DOMAIN_ID" ] && curl -s -X DELETE "$BASE_URL/api/domains/$DOMAIN_ID" > /dev/null 2>&1 && echo "  Deleted domain $DOMAIN_ID" || true
+    [ -n "$ACTIVITY_ID" ] && curl -s -L -X DELETE "$BASE_URL/api/activity/$ACTIVITY_ID" > /dev/null 2>&1 && echo "  Deleted activity $ACTIVITY_ID" || true
+    [ -n "$TASK_ID" ] && curl -s -L -X DELETE "$BASE_URL/api/tasks/$TASK_ID" > /dev/null 2>&1 && echo "  Deleted task $TASK_ID" || true
+    [ -n "$PROJECT_ID" ] && curl -s -L -X DELETE "$BASE_URL/api/projects/$PROJECT_ID" > /dev/null 2>&1 && echo "  Deleted project $PROJECT_ID" || true
+    [ -n "$GOAL_ID" ] && curl -s -L -X DELETE "$BASE_URL/api/goals/$GOAL_ID" > /dev/null 2>&1 && echo "  Deleted goal $GOAL_ID" || true
+    [ -n "$DOMAIN_ID" ] && curl -s -L -X DELETE "$BASE_URL/api/domains/$DOMAIN_ID" > /dev/null 2>&1 && echo "  Deleted domain $DOMAIN_ID" || true
 }
 
 # Helper: make an API call and capture status + body
@@ -55,12 +55,12 @@ api_call() {
     local data="${3:-}"
 
     if [ -n "$data" ]; then
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X "$method" \
+        RESPONSE=$(curl -s -L -w "\n%{http_code}" -X "$method" \
             -H "Content-Type: application/json" \
             -d "$data" \
             "$BASE_URL$path" 2>&1) || RESPONSE=$'error\n000'
     else
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X "$method" \
+        RESPONSE=$(curl -s -L -w "\n%{http_code}" -X "$method" \
             "$BASE_URL$path" 2>&1) || RESPONSE=$'error\n000'
     fi
 
@@ -158,7 +158,7 @@ fi
 # Step 7: Log activity
 # -----------------------------------------------------------------------
 echo "Step 7: Log activity"
-api_call POST /api/activity "{\"action_type\": \"smoke_test\", \"notes\": \"Automated smoke test entry\"}"
+api_call POST /api/activity "{\"action_type\": \"completed\", \"notes\": \"Automated smoke test entry\"}"
 
 if [ "$HTTP_STATUS" = "201" ]; then
     ACTIVITY_ID=$(echo "$BODY" | jq -r '.id')

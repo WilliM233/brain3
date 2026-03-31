@@ -1,3 +1,19 @@
+# BRAIN 3.0 — AI-powered personal operating system for ADHD
+# Copyright (C) 2026 L (WilliM233)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """CRUD endpoints for Projects."""
 
 from datetime import date
@@ -16,6 +32,16 @@ from app.schemas.projects import (
 )
 
 router = APIRouter()
+
+
+def _compute_progress(project: Project) -> None:
+    """Set progress_pct from the ratio of completed tasks to total tasks."""
+    tasks = project.tasks
+    if not tasks:
+        project.progress_pct = 0
+    else:
+        completed = sum(1 for t in tasks if t.status == "completed")
+        project.progress_pct = round(completed * 100 / len(tasks))
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -41,7 +67,7 @@ def list_projects(
     db: Session = Depends(get_db),
 ) -> list[Project]:
     """List projects with optional filters."""
-    query = db.query(Project)
+    query = db.query(Project).options(joinedload(Project.tasks))
 
     if goal_id is not None:
         query = query.filter(Project.goal_id == goal_id)
@@ -55,7 +81,10 @@ def list_projects(
             Project.status.notin_(["completed", "abandoned"]),
         )
 
-    return query.order_by(Project.created_at).all()
+    projects = query.order_by(Project.created_at).all()
+    for project in projects:
+        _compute_progress(project)
+    return projects
 
 
 @router.get("/{project_id}", response_model=ProjectDetailResponse)
@@ -69,6 +98,7 @@ def get_project(project_id: UUID, db: Session = Depends(get_db)) -> Project:
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    _compute_progress(project)
     return project
 
 
@@ -86,6 +116,7 @@ def update_project(
 
     db.commit()
     db.refresh(project)
+    _compute_progress(project)
     return project
 
 

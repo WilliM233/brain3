@@ -1,3 +1,19 @@
+# BRAIN 3.0 — AI-powered personal operating system for ADHD
+# Copyright (C) 2026 L (WilliM233)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Tests for Goal CRUD endpoints."""
 
 from tests.conftest import FAKE_UUID, make_domain, make_goal, make_project, make_task

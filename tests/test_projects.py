@@ -1,3 +1,19 @@
+# BRAIN 3.0 — AI-powered personal operating system for ADHD
+# Copyright (C) 2026 L (WilliM233)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Tests for Project CRUD endpoints."""
 
 from datetime import date, timedelta
@@ -263,3 +279,60 @@ class TestDeleteProject:
     def test_delete_project_not_found(self, client):
         resp = client.delete(f"/api/projects/{FAKE_UUID}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# progress_pct dynamic computation (#69)
+# ---------------------------------------------------------------------------
+
+class TestProgressPct:
+
+    def test_progress_zero_tasks(self, client):
+        """Project with no tasks returns 0%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 0
+
+    def test_progress_half_completed(self, client):
+        """Project with 1/2 completed tasks returns 50%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="Done", status="completed")
+        make_task(client, project_id=project["id"], title="Pending")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 50
+
+    def test_progress_all_completed(self, client):
+        """Project with 2/2 completed tasks returns 100%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="A", status="completed")
+        make_task(client, project_id=project["id"], title="B", status="completed")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 100
+
+    def test_progress_all_pending(self, client):
+        """Project with all pending tasks returns 0%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="A")
+        make_task(client, project_id=project["id"], title="B")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 0
+
+    def test_progress_on_list_endpoint(self, client):
+        """list_projects also returns computed progress_pct."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="Done", status="completed")
+        make_task(client, project_id=project["id"], title="Pending")
+        resp = client.get("/api/projects")
+        projects = resp.json()
+        assert len(projects) == 1
+        assert projects[0]["progress_pct"] == 50

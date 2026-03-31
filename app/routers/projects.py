@@ -18,6 +18,16 @@ from app.schemas.projects import (
 router = APIRouter()
 
 
+def _compute_progress(project: Project) -> None:
+    """Set progress_pct from the ratio of completed tasks to total tasks."""
+    tasks = project.tasks
+    if not tasks:
+        project.progress_pct = 0
+    else:
+        completed = sum(1 for t in tasks if t.status == "completed")
+        project.progress_pct = round(completed * 100 / len(tasks))
+
+
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Project:
     """Create a new project. Validates that goal_id references an existing goal."""
@@ -41,7 +51,7 @@ def list_projects(
     db: Session = Depends(get_db),
 ) -> list[Project]:
     """List projects with optional filters."""
-    query = db.query(Project)
+    query = db.query(Project).options(joinedload(Project.tasks))
 
     if goal_id is not None:
         query = query.filter(Project.goal_id == goal_id)
@@ -55,7 +65,10 @@ def list_projects(
             Project.status.notin_(["completed", "abandoned"]),
         )
 
-    return query.order_by(Project.created_at).all()
+    projects = query.order_by(Project.created_at).all()
+    for project in projects:
+        _compute_progress(project)
+    return projects
 
 
 @router.get("/{project_id}", response_model=ProjectDetailResponse)
@@ -69,6 +82,7 @@ def get_project(project_id: UUID, db: Session = Depends(get_db)) -> Project:
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    _compute_progress(project)
     return project
 
 
@@ -86,6 +100,7 @@ def update_project(
 
     db.commit()
     db.refresh(project)
+    _compute_progress(project)
     return project
 
 

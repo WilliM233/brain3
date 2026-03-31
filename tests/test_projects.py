@@ -263,3 +263,60 @@ class TestDeleteProject:
     def test_delete_project_not_found(self, client):
         resp = client.delete(f"/api/projects/{FAKE_UUID}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# progress_pct dynamic computation (#69)
+# ---------------------------------------------------------------------------
+
+class TestProgressPct:
+
+    def test_progress_zero_tasks(self, client):
+        """Project with no tasks returns 0%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 0
+
+    def test_progress_half_completed(self, client):
+        """Project with 1/2 completed tasks returns 50%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="Done", status="completed")
+        make_task(client, project_id=project["id"], title="Pending")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 50
+
+    def test_progress_all_completed(self, client):
+        """Project with 2/2 completed tasks returns 100%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="A", status="completed")
+        make_task(client, project_id=project["id"], title="B", status="completed")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 100
+
+    def test_progress_all_pending(self, client):
+        """Project with all pending tasks returns 0%."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="A")
+        make_task(client, project_id=project["id"], title="B")
+        resp = client.get(f"/api/projects/{project['id']}")
+        assert resp.json()["progress_pct"] == 0
+
+    def test_progress_on_list_endpoint(self, client):
+        """list_projects also returns computed progress_pct."""
+        domain = make_domain(client)
+        goal = make_goal(client, domain["id"])
+        project = make_project(client, goal["id"])
+        make_task(client, project_id=project["id"], title="Done", status="completed")
+        make_task(client, project_id=project["id"], title="Pending")
+        resp = client.get("/api/projects")
+        projects = resp.json()
+        assert len(projects) == 1
+        assert projects[0]["progress_pct"] == 50

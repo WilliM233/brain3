@@ -53,6 +53,19 @@ class TaskTag(Base):
     )
 
 
+class ActivityTag(Base):
+    """Many-to-many link between activity log entries and tags."""
+
+    __tablename__ = "activity_tags"
+
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("activity_log.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pillar 1: Domains
 # ---------------------------------------------------------------------------
@@ -249,6 +262,9 @@ class Tag(Base):
     tasks: Mapped[list["Task"]] = relationship(
         secondary="task_tags", back_populates="tags",
     )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(
+        secondary="activity_tags", back_populates="tags",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -436,3 +452,6 @@ class ActivityLog(Base):
     task: Mapped["Task | None"] = relationship(back_populates="activity_logs")
     routine: Mapped["Routine | None"] = relationship(back_populates="activity_logs")
     checkin: Mapped["StateCheckin | None"] = relationship(back_populates="activity_logs")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="activity_tags", back_populates="activity_logs",
+    )

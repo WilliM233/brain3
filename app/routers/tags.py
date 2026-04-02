@@ -22,7 +22,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Tag, Task, TaskTag
+from app.models import ActivityLog, Tag, Task, TaskTag
+from app.schemas.activity import ActivityLogResponse
 from app.schemas.tags import TagCreate, TagResponse, TagUpdate
 from app.schemas.tasks import TaskResponse
 
@@ -117,6 +118,22 @@ def list_tasks_for_tag(tag_id: UUID, db: Session = Depends(get_db)) -> list[Task
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     return tag.tasks
+
+
+# ---------------------------------------------------------------------------
+# Reverse lookup — /api/tags/{tag_id}/activities
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tag_id}/activities", response_model=list[ActivityLogResponse])
+def list_activities_for_tag(
+    tag_id: UUID, db: Session = Depends(get_db)
+) -> list[ActivityLog]:
+    """List all activity log entries that have a given tag."""
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag.activity_logs
 
 
 # ---------------------------------------------------------------------------

@@ -77,3 +77,6 @@ app.include_router(checkins.router, prefix="/api/checkins", tags=["Check-ins"])
 app.include_router(activity.router, prefix="/api/activity", tags=["Activity Log"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(tags.task_tags_router, prefix="/api/tasks", tags=["Task Tags"])
+app.include_router(
+    activity.activity_tags_router, prefix="/api/activity", tags=["Activity Tags"],
+)

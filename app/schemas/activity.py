@@ -42,6 +42,7 @@ class ActivityLogCreate(BaseModel):
     mood_rating: int | None = None
     friction_actual: int | None = None
     duration_minutes: int | None = None
+    tag_ids: list[UUID] | None = None
 
     @field_validator("energy_before", "energy_after", "mood_rating", "friction_actual")
     @classmethod
@@ -100,6 +101,7 @@ class ActivityLogResponse(BaseModel):
     friction_actual: int | None = None
     duration_minutes: int | None = None
     logged_at: datetime
+    tags: list["TagResponse"] = []
 
 
 class ActivityLogDetailResponse(ActivityLogResponse):
@@ -112,6 +114,8 @@ class ActivityLogDetailResponse(ActivityLogResponse):
 
 from app.schemas.checkins import CheckinResponse  # noqa: E402
 from app.schemas.routines import RoutineResponse  # noqa: E402
+from app.schemas.tags import TagResponse  # noqa: E402
 from app.schemas.tasks import TaskResponse  # noqa: E402
 
+ActivityLogResponse.model_rebuild()
 ActivityLogDetailResponse.model_rebuild()

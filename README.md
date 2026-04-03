@@ -44,15 +44,35 @@ Everything flows from domains down through goals and projects to tasks, with rou
 | MCP Transport | Anthropic Python MCP SDK | latest stable |
 | Deployment | Docker on TrueNAS | Docker Compose v2 |
 
-## Production Deployment
+## Deployment
 
-To deploy BRAIN 3.0 on a home server (TrueNAS or any Docker-capable host):
+BRAIN 3.0 supports three environments. Each has its own compose file and can coexist on the same host:
+
+| Environment | Compose File | API Port | Use Case |
+|-------------|-------------|----------|----------|
+| Dev | `docker-compose.dev.yml` | 8000 (native) | Local development — postgres only, uvicorn runs natively |
+| Test | `docker-compose.test.yml` | 8100 | UAT — full stack in Docker from `develop` branch |
+| Prod | `docker-compose.prod.yml` | 8000 | Production — full stack in Docker from `main` branch |
+
+### Production
+
 ```bash
 git clone -b main https://github.com/WilliM233/brain3.git
 cd brain3
 cp .env.production.example .env
 # Edit .env with strong credentials — do not use dev defaults
 docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### Test Stack
+
+```bash
+git clone -b develop https://github.com/WilliM233/brain3.git brain3-test
+cd brain3-test
+cp .env.test.example .env
+# Edit .env with credentials
+docker compose -f docker-compose.test.yml up -d --build
+# Verify: curl http://localhost:8100/health
 ```
 
 ## Quick Start (Development)
@@ -85,7 +105,7 @@ Verify it's running:
 docker compose -f docker-compose.dev.yml ps
 ```
 
-You should see `brain3-postgres-dev` with status `healthy`.
+You should see the postgres service with status `healthy`.
 
 ### 3. Install dependencies
 

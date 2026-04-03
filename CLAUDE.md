@@ -165,6 +165,7 @@ brain3/
 │   ├── tickets/
 │   └── ...
 ├── docker-compose.dev.yml
+├── docker-compose.test.yml
 ├── docker-compose.prod.yml
 ├── Dockerfile
 ├── requirements.txt

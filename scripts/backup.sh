@@ -15,7 +15,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Configuration (override via environment or .env)
 BACKUP_PATH="${BACKUP_PATH:-/mnt/pool/backups/brain3}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-CONTAINER_NAME="${DB_CONTAINER_NAME:-brain3-db}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 DB_USER="${POSTGRES_USER:-brain3}"
 DB_NAME="${POSTGRES_DB:-brain3}"
 LOG_FILE="$BACKUP_PATH/backup.log"
@@ -38,8 +38,8 @@ mkdir -p "$BACKUP_PATH"
 trap 'log "FAIL: Backup failed with exit code $?"; exit 1' ERR
 
 # Run backup
-log "Starting backup: $FILENAME"
-docker exec "$CONTAINER_NAME" pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_PATH/$FILENAME"
+log "Starting backup: $FILENAME (compose file: $COMPOSE_FILE)"
+docker compose -f "$PROJECT_DIR/$COMPOSE_FILE" exec -T db pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_PATH/$FILENAME"
 
 # Verify the file exists and is non-empty
 if [ ! -s "$BACKUP_PATH/$FILENAME" ]; then

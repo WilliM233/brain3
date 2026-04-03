@@ -13,6 +13,29 @@ Deploy BRAIN 3.0 to TrueNAS or any Docker-capable Linux server. This guide cover
 
 ---
 
+## Environments
+
+BRAIN 3.0 supports three deployment environments, each with its own compose file and project name:
+
+| Environment | Compose File | Branch | API Port | Postgres Port | Project Name |
+|-------------|-------------|--------|----------|---------------|--------------|
+| **Dev** | `docker-compose.dev.yml` | any | 8000 (native uvicorn) | 5432 | `brain3-dev` |
+| **Test** | `docker-compose.test.yml` | `develop` | 8100 | 5433 | `brain3-test` |
+| **Prod** | `docker-compose.prod.yml` | `main` | 8000 | internal only | `brain3-prod` |
+
+- **Dev** runs postgres only — the developer runs uvicorn natively for hot-reload during development.
+- **Test** runs a full stack (API + DB in Docker) for UAT verification against the `develop` branch.
+- **Prod** runs a full stack deployed from `main` on TrueNAS.
+
+All three can coexist on the same host without conflicts. The `COMPOSE_PROJECT_NAME` in each `.env` ensures Docker Compose manages each stack independently — `docker compose down` only touches containers belonging to that project.
+
+Each environment has an `.env` example file:
+- Dev: `cp .env.example .env`
+- Test: `cp .env.test.example .env`
+- Prod: `cp .env.production.example .env`
+
+---
+
 ## Environment Configuration
 
 ### 1. Clone the repository
@@ -85,7 +108,7 @@ The production compose runs **both** PostgreSQL and the API as containers on a p
 docker compose -f docker-compose.prod.yml ps
 ```
 
-Both `brain3-db` and `brain3-api` should show as running.
+Both `db` and `api` services should show as running.
 
 Check the health endpoint:
 
@@ -116,11 +139,53 @@ The smoke test creates and deletes test entities across the full API surface: do
 
 ---
 
+## Test Stack Deployment
+
+The test stack runs the full application (API + DB) in Docker for UAT verification. It uses different ports so it can run alongside the production stack on the same host.
+
+### 1. Create the environment file
+
+```bash
+cp .env.test.example .env
+```
+
+Edit `.env` with appropriate values. The test defaults use port 8100 for the API and 5433 for postgres.
+
+### 2. Build and start
+
+```bash
+docker compose -f docker-compose.test.yml up -d --build
+```
+
+### 3. Verify
+
+```bash
+docker compose -f docker-compose.test.yml ps
+curl http://localhost:8100/health
+```
+
+### 4. Update to latest code
+
+```bash
+git pull origin develop
+docker compose -f docker-compose.test.yml up -d --build
+```
+
+### 5. Tear down
+
+```bash
+docker compose -f docker-compose.test.yml down
+```
+
+This removes only the test containers. Production and dev stacks are unaffected.
+
+---
+
 ## Configure Backups
 
 ### What the backup script does
 
-`scripts/backup.sh` runs `pg_dump` inside the `brain3-db` container, compresses the output with gzip, and stores it in `BACKUP_PATH`. It then deletes backups older than `BACKUP_RETENTION_DAYS` (default: 30).
+`scripts/backup.sh` runs `pg_dump` via `docker compose exec` against the `db` service, compresses the output with gzip, and stores it in `BACKUP_PATH`. It then deletes backups older than `BACKUP_RETENTION_DAYS` (default: 30). The script defaults to using `docker-compose.prod.yml` — override with `COMPOSE_FILE` to back up a different environment.
 
 Backup files are created with restrictive permissions (mode 600, owner-only readable) via `umask 077`. The script logs every run to `BACKUP_PATH/backup.log`.
 
@@ -229,12 +294,20 @@ In Phase 1 (no web UI), the primary consumer is the MCP server, which makes serv
 
 ## Updating
 
-To deploy a new version:
+To deploy a new version, pull the latest code and rebuild. Use the compose file matching your environment:
 
+**Production:**
+```bash
+cd /path/to/brain3
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+**Test:**
 ```bash
 cd /path/to/brain3
 git pull origin develop
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.test.yml up -d --build
 ```
 
 The API container runs Alembic migrations automatically on startup (`scripts/entrypoint.sh`), so database schema updates are applied with each deploy. Data is preserved — the PostgreSQL volume persists across container rebuilds.
@@ -279,7 +352,7 @@ Verify `POSTGRES_HOST=db` in your `.env` — this must match the Docker Compose 
 - Is the database container running? `docker ps | grep brain3-db`
 - Does the backup path exist and is it writable? `ls -la /mnt/pool/backups/brain3/`
 - Check the backup log: `cat /mnt/pool/backups/brain3/backup.log`
-- Is the container name correct? The script defaults to `brain3-db` (from `DB_CONTAINER_NAME` or the compose file's `container_name`).
+- Is the compose file correct? The script defaults to `docker-compose.prod.yml`. Override with `COMPOSE_FILE=docker-compose.test.yml` to back up the test stack.
 
 ### MCP can't connect to the API
 

@@ -23,15 +23,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import ActivityLog, Routine, StateCheckin, Task
+from app.models import ActivityLog, ActivityTag, Routine, StateCheckin, Tag, Task
 from app.schemas.activity import (
     ActivityLogCreate,
     ActivityLogDetailResponse,
     ActivityLogResponse,
     ActivityLogUpdate,
 )
+from app.schemas.tags import TagResponse
 
 router = APIRouter()
+activity_tags_router = APIRouter()
 
 
 @router.post("/", response_model=ActivityLogResponse, status_code=status.HTTP_201_CREATED)
@@ -47,8 +49,22 @@ def create_activity(payload: ActivityLogCreate, db: Session = Depends(get_db)) -
         if not db.query(StateCheckin).filter(StateCheckin.id == payload.checkin_id).first():
             raise HTTPException(status_code=400, detail="Check-in not found")
 
-    entry = ActivityLog(**payload.model_dump())
+    # Validate tag_ids if provided
+    tags = []
+    if payload.tag_ids:
+        for tid in payload.tag_ids:
+            tag = db.query(Tag).filter(Tag.id == tid).first()
+            if not tag:
+                raise HTTPException(status_code=400, detail=f"Tag {tid} not found")
+            tags.append(tag)
+
+    entry = ActivityLog(**payload.model_dump(exclude={"tag_ids"}))
     db.add(entry)
+    db.flush()
+
+    for tag in tags:
+        db.add(ActivityTag(activity_id=entry.id, tag_id=tag.id))
+
     db.commit()
     db.refresh(entry)
     return entry
@@ -63,6 +79,7 @@ def list_activity(
     logged_before: datetime | None = Query(None),
     has_task: bool | None = Query(None),
     has_routine: bool | None = Query(None),
+    tag: str | None = Query(None, description="Comma-separated tag names (AND logic)"),
     db: Session = Depends(get_db),
 ) -> list[ActivityLog]:
     """List activity log entries with optional filters. Descending by logged_at."""
@@ -86,6 +103,12 @@ def list_activity(
         query = query.filter(ActivityLog.routine_id.isnot(None))
     elif has_routine is False:
         query = query.filter(ActivityLog.routine_id.is_(None))
+    if tag is not None:
+        tag_names = [t.strip().lower() for t in tag.split(",") if t.strip()]
+        for tag_name in tag_names:
+            query = query.filter(
+                ActivityLog.tags.any(Tag.name == tag_name)
+            )
 
     return query.order_by(ActivityLog.logged_at.desc()).all()
 
@@ -99,6 +122,7 @@ def get_activity(entry_id: UUID, db: Session = Depends(get_db)) -> ActivityLog:
             joinedload(ActivityLog.task),
             joinedload(ActivityLog.routine),
             joinedload(ActivityLog.checkin),
+            joinedload(ActivityLog.tags),
         )
         .filter(ActivityLog.id == entry_id)
         .first()
@@ -152,4 +176,71 @@ def delete_activity(entry_id: UUID, db: Session = Depends(get_db)) -> None:
     if not entry:
         raise HTTPException(status_code=404, detail="Activity log entry not found")
     db.delete(entry)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Activity-Tag attachment — /api/activity/{activity_id}/tags
+# ---------------------------------------------------------------------------
+
+
+@activity_tags_router.get("/{activity_id}/tags", response_model=list[TagResponse])
+def list_tags_on_activity(
+    activity_id: UUID, db: Session = Depends(get_db)
+) -> list[Tag]:
+    """List all tags attached to an activity log entry."""
+    entry = db.query(ActivityLog).filter(ActivityLog.id == activity_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Activity log entry not found")
+    return entry.tags
+
+
+@activity_tags_router.post(
+    "/{activity_id}/tags/{tag_id}", response_model=TagResponse,
+)
+def attach_tag_to_activity(
+    activity_id: UUID, tag_id: UUID, db: Session = Depends(get_db)
+) -> Tag:
+    """Attach a tag to an activity log entry. Idempotent."""
+    entry = db.query(ActivityLog).filter(ActivityLog.id == activity_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Activity log entry not found")
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    existing = (
+        db.query(ActivityTag)
+        .filter(ActivityTag.activity_id == activity_id, ActivityTag.tag_id == tag_id)
+        .first()
+    )
+    if not existing:
+        db.add(ActivityTag(activity_id=activity_id, tag_id=tag_id))
+        db.commit()
+
+    return tag
+
+
+@activity_tags_router.delete(
+    "/{activity_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT,
+)
+def detach_tag_from_activity(
+    activity_id: UUID, tag_id: UUID, db: Session = Depends(get_db)
+) -> None:
+    """Remove a tag from an activity log entry."""
+    entry = db.query(ActivityLog).filter(ActivityLog.id == activity_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Activity log entry not found")
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    link = (
+        db.query(ActivityTag)
+        .filter(ActivityTag.activity_id == activity_id, ActivityTag.tag_id == tag_id)
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=404, detail="Tag is not attached to this activity")
+    db.delete(link)
     db.commit()

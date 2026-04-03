@@ -3,8 +3,10 @@ services:
     image: postgres:16.13-alpine
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - brain3_prod_data:/var/lib/postgresql/data
+      - brain3_test_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brain3}"]
       interval: 10s
@@ -18,7 +20,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "${API_PORT:-8000}:${API_PORT:-8000}"
+      - "${API_PORT:-8100}:${API_PORT:-8100}"
     depends_on:
       db:
         condition: service_healthy
@@ -30,4 +32,4 @@ networks:
     driver: bridge
 
 volumes:
-  brain3_prod_data:
+  brain3_test_data:

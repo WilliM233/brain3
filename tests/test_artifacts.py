@@ -18,7 +18,6 @@
 
 from tests.conftest import FAKE_UUID, make_tag
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -178,7 +177,7 @@ class TestListArtifacts:
 
     def test_filter_by_parent_id(self, client):
         parent = make_artifact(client, title="Parent")
-        child1 = make_artifact(client, title="Child 1", parent_id=parent["id"])
+        make_artifact(client, title="Child 1", parent_id=parent["id"])
         make_artifact(client, title="Child 2", parent_id=parent["id"])
         make_artifact(client, title="Standalone")
         resp = client.get(f"/api/artifacts?parent_id={parent['id']}")
@@ -515,7 +514,7 @@ class TestArtifactResponseIncludesTags:
 
     def test_list_response_includes_tags(self, client):
         tag = make_tag(client, name="claude-md")
-        artifact = make_artifact(client, tag_ids=[tag["id"]])
+        make_artifact(client, tag_ids=[tag["id"]])
         resp = client.get("/api/artifacts")
         items = resp.json()
         assert len(items) == 1

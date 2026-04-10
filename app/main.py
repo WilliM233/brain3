@@ -27,6 +27,7 @@ from app.routers import (
     activity,
     artifacts,
     checkins,
+    directives,
     domains,
     goals,
     projects,
@@ -89,4 +90,8 @@ app.include_router(
 app.include_router(protocols.router, prefix="/api/protocols", tags=["Protocols"])
 app.include_router(
     protocols.protocol_tags_router, prefix="/api/protocols", tags=["Protocol Tags"],
+)
+app.include_router(directives.router, prefix="/api/directives", tags=["Directives"])
+app.include_router(
+    directives.directive_tags_router, prefix="/api/directives", tags=["Directive Tags"],
 )

@@ -22,9 +22,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ActivityLog, Artifact, Protocol, Tag, Task, TaskTag
+from app.models import ActivityLog, Artifact, Directive, Protocol, Tag, Task, TaskTag
 from app.schemas.activity import ActivityLogResponse
 from app.schemas.artifacts import ArtifactResponse
+from app.schemas.directives import DirectiveResponse
 from app.schemas.protocols import ProtocolResponse
 from app.schemas.tags import TagCreate, TagResponse, TagUpdate
 from app.schemas.tasks import TaskResponse
@@ -168,6 +169,22 @@ def list_protocols_for_tag(
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     return tag.protocols
+
+
+# ---------------------------------------------------------------------------
+# Reverse lookup — /api/tags/{tag_id}/directives
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tag_id}/directives", response_model=list[DirectiveResponse])
+def list_directives_for_tag(
+    tag_id: UUID, db: Session = Depends(get_db)
+) -> list[Directive]:
+    """List all directives that have a given tag."""
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag.directives
 
 
 # ---------------------------------------------------------------------------

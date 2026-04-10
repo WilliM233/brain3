@@ -15,9 +15,11 @@ Most task managers treat you like a filing cabinet with legs: store things, sort
 
 This is Phase 1: the core data layer and API. Claude connects through the [Model Context Protocol (MCP)](https://github.com/willim233/brain3-mcp) and acts as a partner — not an assistant. It reads your patterns, notices neglected areas of life, pushes back when you're overloading yourself, and reasons about what actually makes sense right now. For the full design rationale, see the [System Design Document](docs/BRAIN_3_0_Design_Document.md).
 
-## Architecture — The Seven Pillars
+## Architecture
 
-The data model is organized around seven core concepts that give the system a complete picture of your life:
+The data model is organized around core entities that give the system a complete picture of your life:
+
+### The Seven Pillars
 
 | Pillar | What It Captures |
 |--------|-----------------|
@@ -30,6 +32,19 @@ The data model is organized around seven core concepts that give the system a co
 | **Activity Log** | What happened and how it felt, powering pattern recognition over time |
 
 Everything flows from domains down through goals and projects to tasks, with routines running in parallel and the activity log recording what actually happened. Claude uses this full picture to reason about priorities, spot avoidance patterns, and match work to capacity.
+
+### The Knowledge Layer (v1.2.0)
+
+v1.2.0 adds four entities that give the system persistent knowledge — documents, procedures, behavioral rules, and operating modes that carry context across sessions.
+
+| Entity | What It Captures |
+|--------|-----------------|
+| **Artifacts** | Living reference documents — briefs, templates, specs, prompts. Versioned, taggable, with parent/child hierarchy and 512KB content storage. |
+| **Protocols** | Step-by-step procedures stored as structured JSON. Linked to an optional source artifact. Versioned on update. |
+| **Directives** | Behavioral rules and guardrails with scoped priority (global, skill, or agent). The system's operating constraints. |
+| **Skills** | Named operating modes that bundle domains, protocols, and directives into a loadable context. The `get_skill_full` endpoint bootstraps an entire working context in one call. |
+
+Skills tie the knowledge layer together. A skill like "session-startup" links to the domains it covers, the protocols it follows, and the directives that constrain it — giving Claude a complete operating context loaded in a single request.
 
 ## Tech Stack
 
@@ -121,7 +136,7 @@ pip install -r requirements.txt
 alembic upgrade head
 ```
 
-This creates all seven pillar tables and their relationships.
+This creates all tables — the seven pillars, knowledge layer entities, tagging associations, and skill link tables.
 
 ### 5. Start the API
 
@@ -145,24 +160,53 @@ BRAIN 3.0's primary interface is Claude, connected through the Model Context Pro
 
 **[brain3-mcp](https://github.com/willim233/brain3-mcp)** — Claude MCP integration for BRAIN 3.0
 
-The MCP server translates Claude's tool calls into BRAIN 3.0 API requests, giving Claude full CRUD access to all seven pillars plus filtered queries, activity logging, and reporting endpoints. See the brain3-mcp README for setup instructions.
+The MCP server translates Claude's tool calls into BRAIN 3.0 API requests, giving Claude full access to all entities — the seven pillars, knowledge layer, batch operations, and reporting endpoints. 109 tools covering 109 API endpoints. See the brain3-mcp README for setup instructions.
 
-Once connected, Claude can manage your goals, create tasks matched to your energy level, track routine streaks, log activities, and surface patterns in how you work and feel over time.
+Once connected, Claude can manage your goals, create tasks matched to your energy level, track routine streaks, log activities, load operating contexts via skills, and surface patterns in how you work and feel over time.
 
 ## Project Status
 
-**v1.0.0 — Phase 1 Complete**
+**v1.2.0 — The Knowledge Layer**
 
-Phase 1 delivers the core data loop: database, API, and MCP integration. All seven pillar entities have full CRUD, filtered queries, and reporting endpoints. The system is stable — 293 tests passing, lint clean, CI green.
+The latest release adds persistent knowledge entities (Artifacts, Protocols, Directives, Skills), a batch API for bulk operations, and a seed framework for reproducible data loading. 109 API endpoints, 621 tests passing, lint clean, CI green.
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| **Phase 1** | Core loop — Database, FastAPI, MCP. Claude conversation only. | **Complete** |
+| **Phase 1** | Core loop — Database, FastAPI, MCP. Seven pillars, CRUD, reporting. | **Complete** (v1.0.0) |
+| **v1.1.0** | Activity tags — tagging on activity log entries | **Complete** |
+| **v1.2.0** | Knowledge layer — Artifacts, Protocols, Directives, Skills, Batch API, seed framework | **Complete** |
 | **Phase 2** | Proactive — Scheduler, Home Assistant integration, push notifications | Planned |
 | **Phase 3** | Web UI — Mobile-first dashboard, quick entry, visual reporting | Planned |
 | **Phase 4+** | Expand — New domains, voice, calendar, deeper HA automations | Planned |
 
 **What's not here yet:** No web UI, no authentication (single-user behind firewall), no scheduler or push notifications. Those are Phase 2 and 3.
+
+## Batch API
+
+v1.2.0 introduces batch endpoints for bulk operations. All batch creates are atomic — the entire batch succeeds or rolls back.
+
+**Batch create** (`POST /api/{entity}/batch`): Tasks, Activity, Artifacts (max 25), Protocols, Directives, Skills (max 100 each unless noted).
+
+**Batch tag** (`POST /api/{entity}/{id}/tags/batch`): Attach up to 100 tags in a single request. Supported on Tasks, Activity, and Artifacts.
+
+## Seed Framework
+
+Reproducible data seeding for bootstrapping new environments with starter protocols, directives, and skills.
+
+```bash
+# Load all seed data
+python scripts/seed_data.py
+
+# Preview without writing
+python scripts/seed_data.py --dry-run
+
+# Load a specific entity type
+python scripts/seed_data.py --only protocols
+```
+
+Seed data lives in `scripts/seeds/` as JSON files. The loader is idempotent (checks by name before creating) and resolves cross-references — skills reference protocols and directives by name, resolved to IDs at load time. Loading order: protocols → directives → skills.
+
+A content migration script (`scripts/migrate_to_artifacts.py`) is also available for migrating existing reference documents into the Artifacts entity.
 
 ## Contributing
 

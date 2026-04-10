@@ -79,26 +79,88 @@ This is what makes BRAIN a learning system. Claude uses the log to recognize pat
 
 ---
 
-## How the Pillars Relate
+## The Knowledge Layer (v1.2.0)
+
+v1.2.0 adds four entities that give the system persistent knowledge — documents, procedures, behavioral rules, and operating modes that carry context across sessions.
+
+### 8. Artifacts
+
+Living reference documents — briefs, templates, specs, prompts, journals. Artifacts have their own lifecycle: they're versioned (auto-incremented on content change), taggable, and organized in a parent/child hierarchy. Content is stored inline (up to 512KB) rather than as file pointers.
+
+**Types:** document, protocol, brief, prompt, template, journal, spec.
+
+**Key features:**
+- Self-referential parent/child tree for document organization
+- `is_seedable` flag marks artifacts eligible for automated seeding
+- Content size tracked as a computed field for monitoring
+
+### 9. Protocols
+
+Step-by-step procedures stored as structured JSON arrays. Each step has an `order`, `instruction`, and optional `detail` field. Protocols can link to a source artifact for richer context.
+
+**Key features:**
+- Structured `steps` field (max 50 per protocol) — not freeform text
+- Optional `artifact_id` linking back to a source document
+- Versioned on update (auto-incremented when steps or description change)
+- Unique name constraint
+
+### 10. Directives
+
+Behavioral rules and guardrails — the system's operating constraints. Directives have scoped priority:
+
+| Scope | Meaning |
+|-------|---------|
+| **global** | Applies everywhere, always |
+| **skill** | Applies when a specific skill is active (`scope_ref` = skill ID) |
+| **agent** | Applies to a specific agent context (`scope_ref` = agent ID) |
+
+**Priority:** 1-10 scale. When directives conflict, higher priority wins. The `resolve_directives` endpoint merges global + skill + agent directives into a single ordered set.
+
+### 11. Skills
+
+Named operating modes that bundle domains, protocols, and directives into a loadable context. Skills are the orchestration layer of the knowledge system.
+
+**Relationships (many-to-many):**
+- **Domains** — which life areas this skill covers
+- **Protocols** — which procedures this skill follows
+- **Directives** — which behavioral rules constrain this skill
+
+**Key features:**
+- `get_skill_full` — bootstrap endpoint that loads the complete skill context (skill + all linked protocols, directives grouped by scope) in one call
+- `is_default` flag — marks a single system-wide default skill
+- Link/unlink endpoints for managing all three relationship types
+
+---
+
+## How the Entities Relate
 
 ```
 Domains
-  └── Goals
-        └── Projects
-              └── Tasks ←→ Tags (cross-cutting)
+  ├── Goals
+  │     └── Projects
+  │           └── Tasks ←→ Tags (cross-cutting)
   └── Routines
         └── Routine Schedules
 
 Check-ins (standalone — capture state at any time)
 
-Activity Log (references tasks, routines, and/or check-ins)
+Activity Log (references tasks, routines, and/or check-ins) ←→ Tags
+
+Artifacts ←→ Tags
+  └── Protocols ←→ Tags
+
+Directives ←→ Tags
+
+Skills ──┬── Domains (many-to-many)
+         ├── Protocols (many-to-many)
+         └── Directives (many-to-many)
 ```
 
-Domains contain goals and routines. Goals contain projects. Projects contain tasks. Tasks can be tagged for connections that cut across the hierarchy (e.g., "home-depot" tags tasks in multiple projects).
+The seven pillars handle life management — goals, tasks, routines, and behavioral tracking. The knowledge layer handles operational context — what documents to consult, what procedures to follow, what rules to obey, and how to bundle all of that into a named operating mode.
 
-Check-ins are standalone — they capture how you're feeling without being tied to a specific action.
+Tags cut across both layers. Any taggable entity (tasks, activity, artifacts, protocols, directives) can be tagged for cross-cutting queries. The `list_tagged_*` pattern provides reverse lookups from tag to entities.
 
-The activity log ties everything together. Each entry can reference a task, a routine, and/or a check-in, recording what happened and how it felt. The four reporting endpoints aggregate this data to surface patterns.
+The activity log ties the pillars together. Each entry can reference a task, a routine, and/or a check-in, recording what happened and how it felt. The four reporting endpoints aggregate this data to surface patterns.
 
 ---
 

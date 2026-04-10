@@ -64,24 +64,29 @@ These filters are how Claude matches tasks to your current capacity — filterin
 
 ### Tags — `/api/tags`
 
-Cross-cutting labels for tasks. Tags have globally unique names (case-insensitive) with get-or-create behavior on POST.
+Cross-cutting labels for multiple entity types. Tags have globally unique names (case-insensitive) with get-or-create behavior on POST.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/api/tags` | Create or retrieve an existing tag |
-| `GET` | `/api/tags` | List all tags |
+| `GET` | `/api/tags` | List all tags (searchable) |
 | `GET` | `/api/tags/{id}` | Get a tag |
 | `PATCH` | `/api/tags/{id}` | Update a tag |
 | `DELETE` | `/api/tags/{id}` | Delete a tag |
 | `GET` | `/api/tags/{id}/tasks` | List all tasks with this tag |
+| `GET` | `/api/tags/{id}/activities` | List all activity entries with this tag |
+| `GET` | `/api/tags/{id}/artifacts` | List all artifacts with this tag |
+| `GET` | `/api/tags/{id}/protocols` | List all protocols with this tag |
+| `GET` | `/api/tags/{id}/directives` | List all directives with this tag |
 
-**Task-tag associations:**
+**Tagging associations** follow the same pattern for all taggable entities (tasks, activity, artifacts, protocols, directives):
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/tasks/{task_id}/tags` | List tags on a task |
-| `POST` | `/api/tasks/{task_id}/tags/{tag_id}` | Attach a tag to a task |
-| `DELETE` | `/api/tasks/{task_id}/tags/{tag_id}` | Detach a tag from a task |
+| `POST` | `/api/{entity}/{id}/tags/batch` | Attach multiple tags at once (max 100) |
+| `GET` | `/api/{entity}/{id}/tags` | List tags on an entity |
+| `POST` | `/api/{entity}/{id}/tags/{tag_id}` | Attach a single tag (idempotent) |
+| `DELETE` | `/api/{entity}/{id}/tags/{tag_id}` | Detach a tag |
 
 ### Routines — `/api/routines`
 
@@ -106,9 +111,69 @@ State snapshots (energy, mood, focus). CRUD with list filtering.
 
 ### Activity Log — `/api/activity`
 
-Record of what happened and how it felt. Each entry can reference a task, routine, and/or check-in.
+Record of what happened and how it felt. Each entry can reference a task, routine, and/or check-in. Activity entries are taggable (v1.1.0+).
 
-**List filters:** `action_type`, `task_id`, `routine_id`, `logged_after`, `logged_before` (date range), `has_task`, `has_routine`
+**List filters:** `action_type`, `task_id`, `routine_id`, `logged_after`, `logged_before` (date range), `has_task`, `has_routine`, `tag` (comma-separated, AND logic)
+
+---
+
+## Knowledge Layer (v1.2.0)
+
+Four entities that give the system persistent knowledge across sessions.
+
+### Artifacts — `/api/artifacts`
+
+Living reference documents stored with inline content (up to 512KB).
+
+**List filters:** `artifact_type`, `is_seedable`, `search` (title substring), `parent_id`, `tag`
+
+**Types:** document, protocol, brief, prompt, template, journal, spec
+
+### Protocols — `/api/protocols`
+
+Step-by-step procedures with structured JSON steps. Each protocol can link to a source artifact.
+
+**List filters:** `search`, `is_seedable`, `has_artifact`, `tag`
+
+### Directives — `/api/directives`
+
+Behavioral rules with scoped priority (global, skill, agent).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/directives/resolve` | Merge directives for a skill + agent context, ordered by priority |
+
+**List filters:** `scope`, `scope_ref`, `is_seedable`, `priority_min`, `priority_max`, `search`, `tag`
+
+### Skills — `/api/skills`
+
+Named operating modes that bundle domains, protocols, and directives.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/skills/{id}/full` | Bootstrap — load complete skill context in one call |
+| `POST/DELETE` | `/api/skills/{id}/domains/{domain_id}` | Link/unlink a domain |
+| `POST/DELETE` | `/api/skills/{id}/protocols/{protocol_id}` | Link/unlink a protocol |
+| `POST/DELETE` | `/api/skills/{id}/directives/{directive_id}` | Link/unlink a directive |
+
+**List filters:** `search`, `is_seedable`, `is_default`, `domain_id`
+
+---
+
+## Batch API (v1.2.0)
+
+Bulk operations for reducing tool-call overhead. All batch creates are **atomic** — the entire batch succeeds or rolls back.
+
+| Method | Path | Max Items | Purpose |
+|--------|------|-----------|---------|
+| `POST` | `/api/tasks/batch` | 100 | Batch create tasks |
+| `POST` | `/api/activity/batch` | 100 | Batch create activity entries |
+| `POST` | `/api/artifacts/batch` | 25 | Batch create artifacts |
+| `POST` | `/api/protocols/batch` | 100 | Batch create protocols |
+| `POST` | `/api/directives/batch` | 100 | Batch create directives |
+| `POST` | `/api/skills/batch` | 100 | Batch create skills |
+
+Batch tag attachment is available for tasks, activity, and artifacts via `POST /api/{entity}/{id}/tags/batch` (max 100 tags).
 
 ---
 

@@ -16,16 +16,18 @@ The MCP server does not store data — it's a translation layer. All state lives
 
 ## What Claude Can Do
 
-With the MCP connected, Claude has access to:
+With the MCP connected, Claude has access to 109 tools covering the full API:
 
-- **Full CRUD** on all seven pillar entities — create, read, update, delete domains, goals, projects, tasks, routines, check-ins, and activity log entries
+- **Full CRUD** on all entities — domains, goals, projects, tasks, routines, check-ins, activity log, artifacts, protocols, directives, and skills
 - **Filtered queries** — find tasks by energy level, cognitive type, context, due date, and more
-- **Tag management** — create tags, attach/detach them from tasks, query tasks by tag
+- **Tag management** — create tags, attach/detach from multiple entity types, reverse lookup by tag
+- **Knowledge system** — load operating contexts via skills, resolve directives by scope, follow protocols
+- **Batch operations** — bulk create entities and attach tags in single calls
 - **Routine management** — complete routines, manage schedules, track streaks
 - **Reporting** — activity summaries, domain balance, routine adherence, friction analysis
 - **Health check** — verify the API and database are connected
 
-This gives Claude enough context to act as a partner: reasoning about priorities, noticing neglected areas, matching tasks to current capacity, and surfacing patterns from the activity log.
+This gives Claude enough context to act as a partner: reasoning about priorities, noticing neglected areas, matching tasks to current capacity, loading full operating contexts via skills, and surfacing patterns from the activity log.
 
 ---
 

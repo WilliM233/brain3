@@ -34,6 +34,7 @@ from app.routers import (
     protocols,
     reports,
     routines,
+    skills,
     tags,
     tasks,
 )
@@ -94,4 +95,14 @@ app.include_router(
 app.include_router(directives.router, prefix="/api/directives", tags=["Directives"])
 app.include_router(
     directives.directive_tags_router, prefix="/api/directives", tags=["Directive Tags"],
+)
+app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
+app.include_router(
+    skills.skill_domains_router, prefix="/api/skills", tags=["Skill Domains"],
+)
+app.include_router(
+    skills.skill_protocols_router, prefix="/api/skills", tags=["Skill Protocols"],
+)
+app.include_router(
+    skills.skill_directives_router, prefix="/api/skills", tags=["Skill Directives"],
 )

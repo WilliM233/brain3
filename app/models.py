@@ -108,6 +108,49 @@ class DirectiveTag(Base):
 
 
 # ---------------------------------------------------------------------------
+# Association tables: skill relationships
+# ---------------------------------------------------------------------------
+
+class SkillDomain(Base):
+    """Many-to-many link between skills and domains."""
+
+    __tablename__ = "skill_domains"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class SkillProtocol(Base):
+    """Many-to-many link between skills and protocols."""
+
+    __tablename__ = "skill_protocols"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class SkillDirective(Base):
+    """Many-to-many link between skills and directives."""
+
+    __tablename__ = "skill_directives"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    directive_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pillar 1: Domains
 # ---------------------------------------------------------------------------
 
@@ -133,6 +176,9 @@ class Domain(Base):
     )
     routines: Mapped[list["Routine"]] = relationship(
         back_populates="domain", cascade="all, delete-orphan",
+    )
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_domains", back_populates="domains",
     )
 
 
@@ -561,6 +607,7 @@ class Artifact(Base):
         foreign_keys=[parent_id], overlaps="parent",
     )
     protocols: Mapped[list["Protocol"]] = relationship(back_populates="artifact")
+    skills: Mapped[list["Skill"]] = relationship(back_populates="artifact")
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +646,9 @@ class Protocol(Base):
         secondary="protocol_tags", back_populates="protocols",
     )
     artifact: Mapped["Artifact | None"] = relationship(back_populates="protocols")
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_protocols", back_populates="protocols",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -643,3 +693,51 @@ class Directive(Base):
     tags: Mapped[list["Tag"]] = relationship(
         secondary="directive_tags", back_populates="directives",
     )
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_directives", back_populates="directives",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Skills — contextual operating modes
+# ---------------------------------------------------------------------------
+
+class Skill(Base):
+    """Contextual mode that composes protocols, directives, and domains."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    adhd_patterns: Mapped[str | None] = mapped_column(Text)
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_skills_is_seedable", "is_seedable"),
+        Index("ix_skills_is_default", "is_default"),
+    )
+
+    # Relationships
+    domains: Mapped[list["Domain"]] = relationship(
+        secondary="skill_domains", back_populates="skills",
+    )
+    protocols: Mapped[list["Protocol"]] = relationship(
+        secondary="skill_protocols", back_populates="skills",
+    )
+    directives: Mapped[list["Directive"]] = relationship(
+        secondary="skill_directives", back_populates="skills",
+    )
+    artifact: Mapped["Artifact | None"] = relationship(back_populates="skills")

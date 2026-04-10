@@ -1,6 +1,6 @@
 # BRAIN 3.0 API Reference
 
-**Version:** 1.0.0
+**Version:** 1.2.0
 **Base URL:** `http://localhost:8000` (development) or `http://<truenas-ip>:8000` (production)
 **Authentication:** None (Phase 1). All endpoints are unauthenticated. Auth middleware will be added in Phase 3.
 **Content-Type:** `application/json` for all request and response bodies.
@@ -598,6 +598,42 @@ Delete a task. Also removes all tag associations.
 
 **Error:** `404` if task not found.
 
+### `POST /api/tasks/batch`
+
+Batch create tasks. Atomic -- all succeed or all fail. If any item fails validation, the entire batch is rolled back.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[TaskCreate] | yes | max 100 items | Tasks to create |
+
+Each item follows the same schema as `POST /api/tasks`.
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[TaskResponse] | All created tasks |
+| `count` | integer | Number of tasks created |
+
+**Errors:**
+- `400` if any referenced entity (e.g., `project_id`) does not exist. Error message includes the batch item index.
+- `422` if any item fails schema validation
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/tasks/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"title": "Buy groceries", "cognitive_type": "errand", "energy_cost": 2},
+      {"title": "Review PR #42", "cognitive_type": "focus_work", "energy_cost": 4}
+    ]
+  }'
+```
+
 ---
 
 ## Tags
@@ -704,6 +740,46 @@ List all tasks that have a given tag attached.
 curl http://localhost:8000/api/tags/e5f6a7b8-c9d0-1234-efab-345678901234/tasks
 ```
 
+### `GET /api/tags/{tag_id}/activities`
+
+List all activity log entries that have a given tag attached.
+
+**Path parameters:** `tag_id` (UUID)
+
+**Response:** `200 OK` -- `list[ActivityLogResponse]`
+
+**Error:** `404` if tag not found.
+
+### `GET /api/tags/{tag_id}/artifacts`
+
+List all artifacts that have a given tag attached.
+
+**Path parameters:** `tag_id` (UUID)
+
+**Response:** `200 OK` -- `list[ArtifactResponse]`
+
+**Error:** `404` if tag not found.
+
+### `GET /api/tags/{tag_id}/protocols`
+
+List all protocols that have a given tag attached.
+
+**Path parameters:** `tag_id` (UUID)
+
+**Response:** `200 OK` -- `list[ProtocolResponse]`
+
+**Error:** `404` if tag not found.
+
+### `GET /api/tags/{tag_id}/directives`
+
+List all directives that have a given tag attached.
+
+**Path parameters:** `tag_id` (UUID)
+
+**Response:** `200 OK` -- `list[DirectiveResponse]`
+
+**Error:** `404` if tag not found.
+
 ---
 
 ## Task-Tag Associations
@@ -740,6 +816,24 @@ Attach a tag to a task. Idempotent -- attaching the same tag twice is a no-op.
 ```bash
 curl -X POST http://localhost:8000/api/tasks/d4e5f6a7-b8c9-0123-defa-234567890123/tags/e5f6a7b8-c9d0-1234-efab-345678901234
 ```
+
+### `POST /api/tasks/{task_id}/tags/batch`
+
+Attach multiple tags to a task. Idempotent -- tags already attached are silently skipped.
+
+**Path parameters:** `task_id` (UUID)
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `tag_ids` | list[UUID] | yes | max 100 | Tag IDs to attach |
+
+**Response:** `200 OK` -- `list[TagResponse]` (all tags now on the task)
+
+**Errors:**
+- `404` if task not found
+- `400` if any tag ID does not exist
 
 ### `DELETE /api/tasks/{task_id}/tags/{tag_id}`
 
@@ -1128,6 +1222,7 @@ Create a new activity log entry.
 | `mood_rating` | integer | no | 1-5 | How the user felt during/after |
 | `friction_actual` | integer | no | 1-5 | Actual experienced friction (vs. predicted on the task) |
 | `duration_minutes` | integer | no | | How long the activity took |
+| `tag_ids` | list[UUID] | no | | Tag IDs to attach at creation time. Saves separate tag calls. |
 
 **Constraint:** At most one of `task_id`, `routine_id`, `checkin_id` may be set. Providing more than one returns a 422 Validation Error.
 
@@ -1147,6 +1242,7 @@ Create a new activity log entry.
 | `friction_actual` | integer or null | Actual friction (1-5) |
 | `duration_minutes` | integer or null | Duration in minutes |
 | `logged_at` | datetime | When this entry was recorded |
+| `tags` | list[TagResponse] | Tags attached to this entry |
 
 **Errors:**
 - `400` if a referenced entity (task, routine, or check-in) does not exist
@@ -1183,6 +1279,7 @@ List activity log entries with optional filters. Ordered by `logged_at` descendi
 | `logged_before` | datetime | no | Entries logged on or before this timestamp |
 | `has_task` | boolean | no | `true` for entries with a task reference, `false` for entries without |
 | `has_routine` | boolean | no | `true` for entries with a routine reference, `false` for entries without |
+| `tag` | string | no | Comma-separated tag names. Entries must have **all** listed tags (AND logic). |
 
 **Response:** `200 OK` -- `list[ActivityLogResponse]`
 
@@ -1194,6 +1291,9 @@ curl "http://localhost:8000/api/activity?action_type=completed&logged_after=2026
 
 # All routine activity
 curl "http://localhost:8000/api/activity?has_routine=true"
+
+# Entries tagged "session-handoff"
+curl "http://localhost:8000/api/activity?tag=session-handoff"
 ```
 
 ### `GET /api/activity/{entry_id}`
@@ -1240,6 +1340,114 @@ Delete an activity log entry.
 **Response:** `204 No Content`
 
 **Error:** `404` if entry not found.
+
+### `POST /api/activity/batch`
+
+Batch create activity log entries. Atomic -- all succeed or all fail. If any item fails validation, the entire batch is rolled back.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[ActivityLogCreate] | yes | max 100 items | Activity entries to create |
+
+Each item follows the same schema as `POST /api/activity`, including `tag_ids` for inline tagging.
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[ActivityLogResponse] | All created entries |
+| `count` | integer | Number of entries created |
+
+**Errors:**
+- `400` if any referenced entity (task, routine, check-in, or tag) does not exist. Error message includes the batch item index.
+- `422` if any item fails schema validation
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/activity/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"action_type": "reflected", "notes": "Morning review", "mood_rating": 4},
+      {"action_type": "completed", "task_id": "d4e5f6a7-b8c9-0123-defa-234567890123", "duration_minutes": 30}
+    ]
+  }'
+```
+
+---
+
+## Activity-Tag Associations
+
+Attach and detach tags on activity log entries. These endpoints are under the `/api/activity` prefix.
+
+### `POST /api/activity/{activity_id}/tags/batch`
+
+Attach multiple tags to an activity log entry. Idempotent -- tags already attached are silently skipped.
+
+**Path parameters:** `activity_id` (UUID)
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `tag_ids` | list[UUID] | yes | max 100 | Tag IDs to attach |
+
+**Response:** `200 OK` -- `list[TagResponse]` (all tags now on the entry)
+
+**Errors:**
+- `404` if activity not found
+- `400` if any tag ID does not exist
+
+### `GET /api/activity/{activity_id}/tags`
+
+List all tags attached to an activity log entry.
+
+**Path parameters:** `activity_id` (UUID)
+
+**Response:** `200 OK` -- `list[TagResponse]`
+
+**Error:** `404` if activity not found.
+
+### `POST /api/activity/{activity_id}/tags/{tag_id}`
+
+Attach a tag to an activity log entry. Idempotent -- attaching the same tag twice is a no-op.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `activity_id` | UUID | Activity entry to tag |
+| `tag_id` | UUID | Tag to attach |
+
+**Response:** `200 OK` -- `TagResponse` (the attached tag)
+
+**Error:** `404` if activity or tag not found.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/activity/c049821c-3d27-4f28-8e78-a9dc6ea3ccca/tags/aeaa2f20-ecbc-42e1-9041-e57d8fad622b
+```
+
+### `DELETE /api/activity/{activity_id}/tags/{tag_id}`
+
+Detach a tag from an activity log entry.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `activity_id` | UUID | Activity entry to untag |
+| `tag_id` | UUID | Tag to detach |
+
+**Response:** `204 No Content`
+
+**Errors:**
+- `404` if activity or tag not found
+- `404` if the tag is not currently attached to the activity
 
 ---
 
@@ -1494,6 +1702,1007 @@ curl "http://localhost:8000/api/reports/friction-analysis?after=2026-03-01T00:00
 
 ---
 
+## Artifacts
+
+Persistent documents stored in BRAIN -- CLAUDE.md files, design docs, briefs, prompts, templates, journals, specs. Artifacts support hierarchical organization via `parent_id` and are versioned automatically on content changes.
+
+### `POST /api/artifacts`
+
+Create a new artifact.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `title` | string | yes | max 200 chars | Artifact title |
+| `artifact_type` | string | yes | | One of: `document`, `protocol`, `brief`, `prompt`, `template`, `journal`, `spec` |
+| `content` | string | no | max 500,000 chars, max 512 KB UTF-8 | Document body. Byte-length validated. |
+| `parent_id` | UUID | no | must reference existing artifact | Parent artifact for hierarchical organization |
+| `is_seedable` | boolean | no | default: `false` | Whether this artifact can be used in seed scripts |
+| `tag_ids` | list[UUID] | no | | Tag IDs to attach at creation time |
+
+**Response:** `201 Created` -- `ArtifactResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Generated unique identifier |
+| `title` | string | Artifact title |
+| `artifact_type` | string | Type classification |
+| `content_size` | integer | Content size in UTF-8 bytes |
+| `version` | integer | Auto-incremented version (starts at 1) |
+| `parent_id` | UUID or null | Parent artifact ID |
+| `is_seedable` | boolean | Seedable flag |
+| `created_at` | datetime | Creation timestamp (UTC) |
+| `updated_at` | datetime | Last modification timestamp (UTC) |
+| `tags` | list[TagResponse] | Attached tags |
+
+**Errors:**
+- `400` if `parent_id` does not reference an existing artifact
+- `400` if any tag in `tag_ids` does not exist
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/artifacts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Session Startup Protocol",
+    "artifact_type": "protocol",
+    "content": "1. Load skill context via get_skill_full\n2. Check pending tasks\n3. Review recent activity",
+    "is_seedable": true
+  }'
+```
+
+### `POST /api/artifacts/batch`
+
+Batch create artifacts. Atomic -- all succeed or all fail.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[ArtifactCreate] | yes | **max 25 items** | Artifacts to create |
+
+> **Note:** The batch artifact limit is 25 (not 100 like other batch endpoints) due to the potentially large `content` field.
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[ArtifactResponse] | All created artifacts |
+| `count` | integer | Number of artifacts created |
+
+**Errors:**
+- `400` if any `parent_id` or tag ID does not exist. Error message includes the batch item index.
+- `422` if any item fails schema validation
+
+### `GET /api/artifacts`
+
+List artifacts (metadata only, no content). Ordered by `created_at` descending.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `artifact_type` | string | no | Filter by type: `document`, `protocol`, `brief`, `prompt`, `template`, `journal`, `spec` |
+| `is_seedable` | boolean | no | Filter by seedable status |
+| `search` | string | no | Case-insensitive substring match on title |
+| `parent_id` | UUID | no | Filter to children of a specific artifact |
+| `tag` | string | no | Comma-separated tag names (AND logic) |
+
+**Response:** `200 OK` -- `list[ArtifactResponse]`
+
+> **Note:** List responses do not include the `content` field. Use `GET /api/artifacts/{artifact_id}` to retrieve content.
+
+**Example:**
+
+```bash
+# All seedable documents
+curl "http://localhost:8000/api/artifacts?artifact_type=document&is_seedable=true"
+
+# Artifacts tagged "claude-md"
+curl "http://localhost:8000/api/artifacts?tag=claude-md"
+```
+
+### `GET /api/artifacts/{artifact_id}`
+
+Get a single artifact with full content and resolved parent.
+
+**Path parameters:** `artifact_id` (UUID)
+
+**Response:** `200 OK` -- `ArtifactDetailResponse`
+
+Extends `ArtifactResponse` with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | string or null | Full document content |
+| `parent` | ArtifactResponse or null | Resolved parent artifact (metadata only) |
+
+**Error:** `404` if artifact not found.
+
+### `PATCH /api/artifacts/{artifact_id}`
+
+Partial update of an artifact. Only include fields to change.
+
+**Path parameters:** `artifact_id` (UUID)
+
+**Request body:** Same fields as `ArtifactCreate`, all optional (except `tag_ids` -- use tag association endpoints).
+
+**Automatic behaviors:**
+- Changing `content` auto-increments `version` and recomputes `content_size`.
+
+**Response:** `200 OK` -- `ArtifactDetailResponse`
+
+**Error:** `404` if artifact not found.
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:8000/api/artifacts/b2c3d4e5-f6a7-8901-bcde-f23456789012 \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Updated protocol steps..."}'
+```
+
+### `DELETE /api/artifacts/{artifact_id}`
+
+Delete an artifact. Children are **not** cascade-deleted -- their `parent_id` is set to `NULL`.
+
+**Path parameters:** `artifact_id` (UUID)
+
+**Response:** `204 No Content`
+
+**Error:** `404` if artifact not found.
+
+---
+
+## Artifact-Tag Associations
+
+Attach and detach tags on artifacts. These endpoints are under the `/api/artifacts` prefix.
+
+### `POST /api/artifacts/{artifact_id}/tags/batch`
+
+Attach multiple tags to an artifact. Idempotent.
+
+**Path parameters:** `artifact_id` (UUID)
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `tag_ids` | list[UUID] | yes | max 100 | Tag IDs to attach |
+
+**Response:** `200 OK` -- `list[TagResponse]` (all tags now on the artifact)
+
+**Errors:**
+- `404` if artifact not found
+- `400` if any tag ID does not exist
+
+### `GET /api/artifacts/{artifact_id}/tags`
+
+List all tags attached to an artifact.
+
+**Path parameters:** `artifact_id` (UUID)
+
+**Response:** `200 OK` -- `list[TagResponse]`
+
+**Error:** `404` if artifact not found.
+
+### `POST /api/artifacts/{artifact_id}/tags/{tag_id}`
+
+Attach a tag to an artifact. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `artifact_id` | UUID | Artifact to tag |
+| `tag_id` | UUID | Tag to attach |
+
+**Response:** `200 OK` -- `TagResponse`
+
+**Error:** `404` if artifact or tag not found.
+
+### `DELETE /api/artifacts/{artifact_id}/tags/{tag_id}`
+
+Detach a tag from an artifact.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `artifact_id` | UUID | Artifact to untag |
+| `tag_id` | UUID | Tag to detach |
+
+**Response:** `204 No Content`
+
+**Errors:**
+- `404` if artifact or tag not found
+- `404` if the tag is not currently attached to the artifact
+
+---
+
+## Protocols
+
+Step-by-step procedures for repeatable workflows -- session startup sequences, bug triage flows, release processes. Protocols have ordered steps, optional artifact links, and automatic versioning.
+
+### `POST /api/protocols`
+
+Create a new protocol. Name must be unique.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `name` | string | yes | max 100 chars, **unique** | Protocol name |
+| `description` | string | no | max 5000 chars | What this protocol is for |
+| `steps` | list[ProtocolStep] | no | max 50 items | Ordered procedure steps |
+| `artifact_id` | UUID | no | must reference existing artifact | Linked reference document |
+| `is_seedable` | boolean | no | default: `true` | Whether this protocol can be used in seed scripts |
+| `tag_ids` | list[UUID] | no | | Tag IDs to attach at creation time |
+
+**ProtocolStep schema:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `order` | integer | yes | >= 1 | Step sequence number |
+| `title` | string | yes | max 200 chars | Step name |
+| `instruction` | string | yes | max 2000 chars | What to do in this step |
+| `is_optional` | boolean | no | default: `false` | Whether this step can be skipped |
+
+**Response:** `201 Created` -- `ProtocolResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Generated unique identifier |
+| `name` | string | Protocol name |
+| `description` | string or null | Description |
+| `steps` | list[ProtocolStep] or null | Ordered procedure steps |
+| `artifact_id` | UUID or null | Linked artifact ID |
+| `is_seedable` | boolean | Seedable flag |
+| `version` | integer | Auto-incremented version (starts at 1) |
+| `created_at` | datetime | Creation timestamp (UTC) |
+| `updated_at` | datetime | Last modification timestamp (UTC) |
+| `tags` | list[TagResponse] | Attached tags |
+
+**Errors:**
+- `400` if `artifact_id` does not reference an existing artifact
+- `400` if any tag in `tag_ids` does not exist
+- `409` if a protocol with this name already exists
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/protocols \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "session-startup",
+    "description": "Standard agent initialization sequence",
+    "steps": [
+      {"order": 1, "title": "Load skill", "instruction": "Call get_skill_full with the assigned skill ID"},
+      {"order": 2, "title": "Check context", "instruction": "Review recent activity for session continuity"},
+      {"order": 3, "title": "Greet user", "instruction": "Acknowledge what was last worked on", "is_optional": true}
+    ],
+    "is_seedable": true
+  }'
+```
+
+### `POST /api/protocols/batch`
+
+Batch create protocols. Atomic -- all succeed or all fail.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[ProtocolCreate] | yes | max 100 items | Protocols to create |
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[ProtocolResponse] | All created protocols |
+| `count` | integer | Number of protocols created |
+
+**Errors:**
+- `400` if any `artifact_id` or tag ID does not exist
+- `409` if any protocol name is not unique
+- `422` if any item fails schema validation
+
+### `GET /api/protocols`
+
+List protocols. Ordered by `created_at` descending.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `search` | string | no | Case-insensitive substring match on name |
+| `is_seedable` | boolean | no | Filter by seedable status |
+| `has_artifact` | boolean | no | `true` for protocols with a linked artifact, `false` for those without |
+| `tag` | string | no | Comma-separated tag names (AND logic) |
+
+**Response:** `200 OK` -- `list[ProtocolResponse]`
+
+**Example:**
+
+```bash
+# All seedable protocols
+curl "http://localhost:8000/api/protocols?is_seedable=true"
+
+# Search by name
+curl "http://localhost:8000/api/protocols?search=startup"
+```
+
+### `GET /api/protocols/{protocol_id}`
+
+Get a single protocol with resolved artifact details.
+
+**Path parameters:** `protocol_id` (UUID)
+
+**Response:** `200 OK` -- `ProtocolDetailResponse`
+
+Extends `ProtocolResponse` with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `artifact` | ArtifactResponse or null | Resolved linked artifact (metadata only) |
+
+**Error:** `404` if protocol not found.
+
+### `PATCH /api/protocols/{protocol_id}`
+
+Partial update of a protocol.
+
+**Path parameters:** `protocol_id` (UUID)
+
+**Request body:** Same fields as `ProtocolCreate`, all optional (except `tag_ids`).
+
+**Automatic behaviors:**
+- Changing `steps` or `description` auto-increments `version`.
+
+**Uniqueness:** If updating `name`, the new name must not conflict with another protocol.
+
+**Response:** `200 OK` -- `ProtocolDetailResponse`
+
+**Errors:**
+- `404` if protocol not found
+- `409` if the new name conflicts with an existing protocol
+
+### `DELETE /api/protocols/{protocol_id}`
+
+Delete a protocol.
+
+**Path parameters:** `protocol_id` (UUID)
+
+**Response:** `204 No Content`
+
+**Error:** `404` if protocol not found.
+
+---
+
+## Protocol-Tag Associations
+
+Attach and detach tags on protocols. These endpoints are under the `/api/protocols` prefix.
+
+### `GET /api/protocols/{protocol_id}/tags`
+
+List all tags attached to a protocol.
+
+**Path parameters:** `protocol_id` (UUID)
+
+**Response:** `200 OK` -- `list[TagResponse]`
+
+**Error:** `404` if protocol not found.
+
+### `POST /api/protocols/{protocol_id}/tags/{tag_id}`
+
+Attach a tag to a protocol. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `protocol_id` | UUID | Protocol to tag |
+| `tag_id` | UUID | Tag to attach |
+
+**Response:** `200 OK` -- `TagResponse`
+
+**Error:** `404` if protocol or tag not found.
+
+### `DELETE /api/protocols/{protocol_id}/tags/{tag_id}`
+
+Detach a tag from a protocol.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `protocol_id` | UUID | Protocol to untag |
+| `tag_id` | UUID | Tag to detach |
+
+**Response:** `204 No Content`
+
+**Errors:**
+- `404` if protocol or tag not found
+- `404` if the tag is not currently attached to the protocol
+
+---
+
+## Directives
+
+Behavioral rules and guardrails scoped to global, skill, or agent contexts. Directives carry a priority (1-10) and are resolved at session start to build the agent's operating constraints.
+
+### Scope model
+
+| Scope | `scope_ref` | Meaning |
+|-------|-------------|---------|
+| `global` | must be null | Applies to all agents in all contexts |
+| `skill` | required (UUID) | Applies when a specific skill is loaded |
+| `agent` | required (UUID) | Applies to a specific agent identity |
+
+### `GET /api/directives/resolve`
+
+Merge directives by scope. Returns global directives plus optional skill and agent directives, grouped and sorted by priority descending within each group.
+
+> **Note:** This endpoint is registered before `/{directive_id}` to avoid path conflicts.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_id` | UUID | no | Include directives scoped to this skill |
+| `scope_ref` | UUID | no | Include directives scoped to this agent |
+
+**Response:** `200 OK` -- `DirectiveResolveResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `global_directives` | list[DirectiveResponse] | All global directives, sorted by priority desc |
+| `skill_directives` | list[DirectiveResponse] | Skill-scoped directives (empty if no `skill_id` provided) |
+| `agent_directives` | list[DirectiveResponse] | Agent-scoped directives (empty if no `scope_ref` provided) |
+
+**Example:**
+
+```bash
+# Load all directives for skill "core-protocol" + agent "apollo-swagger"
+curl "http://localhost:8000/api/directives/resolve?skill_id=a1b2c3d4-e5f6-7890-abcd-ef1234567890&scope_ref=77abba0e-220e-49bd-82e5-8b9eda8e249c"
+```
+
+### `POST /api/directives`
+
+Create a new directive.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `name` | string | yes | max 200 chars | Directive name |
+| `content` | string | yes | max 10,000 chars | The rule or guardrail text |
+| `scope` | string | yes | | One of: `global`, `skill`, `agent` |
+| `scope_ref` | UUID | conditional | | Required for `skill` and `agent` scope. Must be null for `global`. |
+| `priority` | integer | no | 1-10, default: 5 | Higher = more important |
+| `is_seedable` | boolean | no | default: `true` | Whether this directive can be used in seed scripts |
+| `tag_ids` | list[UUID] | no | | Tag IDs to attach at creation time |
+
+**Response:** `201 Created` -- `DirectiveResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Generated unique identifier |
+| `name` | string | Directive name |
+| `content` | string | Rule text |
+| `scope` | string | Scope level |
+| `scope_ref` | UUID or null | Scope reference |
+| `priority` | integer | Priority (1-10) |
+| `is_seedable` | boolean | Seedable flag |
+| `created_at` | datetime | Creation timestamp (UTC) |
+| `updated_at` | datetime | Last modification timestamp (UTC) |
+| `tags` | list[TagResponse] | Attached tags |
+
+**Errors:**
+- `400` if any tag in `tag_ids` does not exist
+- `422` if scope/scope_ref constraints are violated (global with scope_ref, or skill/agent without scope_ref)
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/directives \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "No silent assumptions",
+    "content": "When a spec is ambiguous, stop and ask a focused question. Do not guess and proceed.",
+    "scope": "global",
+    "priority": 9,
+    "is_seedable": true
+  }'
+```
+
+### `POST /api/directives/batch`
+
+Batch create directives. Atomic -- all succeed or all fail.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[DirectiveCreate] | yes | max 100 items | Directives to create |
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[DirectiveResponse] | All created directives |
+| `count` | integer | Number of directives created |
+
+### `GET /api/directives`
+
+List directives with optional filters. Ordered by `created_at` descending.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope` | string | no | Filter by scope: `global`, `skill`, `agent` |
+| `scope_ref` | UUID | no | Filter by scope reference |
+| `is_seedable` | boolean | no | Filter by seedable status |
+| `priority_min` | integer | no | Minimum priority (1-10, inclusive) |
+| `priority_max` | integer | no | Maximum priority (1-10, inclusive) |
+| `search` | string | no | Case-insensitive substring match on name |
+| `tag` | string | no | Comma-separated tag names (AND logic) |
+
+**Response:** `200 OK` -- `list[DirectiveResponse]`
+
+**Example:**
+
+```bash
+# High-priority global directives
+curl "http://localhost:8000/api/directives?scope=global&priority_min=8"
+
+# Search by name
+curl "http://localhost:8000/api/directives?search=assumption"
+```
+
+### `GET /api/directives/{directive_id}`
+
+Get a single directive.
+
+**Path parameters:** `directive_id` (UUID)
+
+**Response:** `200 OK` -- `DirectiveResponse`
+
+**Error:** `404` if directive not found.
+
+### `PATCH /api/directives/{directive_id}`
+
+Partial update of a directive.
+
+**Path parameters:** `directive_id` (UUID)
+
+**Request body:** Same fields as `DirectiveCreate`, all optional (except `tag_ids`).
+
+**Scope validation:** After merging the update, the scope/scope_ref constraints are re-validated. For example, changing `scope` to `global` while `scope_ref` is still set will fail.
+
+**Response:** `200 OK` -- `DirectiveResponse`
+
+**Errors:**
+- `404` if directive not found
+- `422` if the post-merge state violates scope/scope_ref constraints
+
+### `DELETE /api/directives/{directive_id}`
+
+Delete a directive.
+
+**Path parameters:** `directive_id` (UUID)
+
+**Response:** `204 No Content`
+
+**Error:** `404` if directive not found.
+
+---
+
+## Directive-Tag Associations
+
+Attach and detach tags on directives. These endpoints are under the `/api/directives` prefix.
+
+### `GET /api/directives/{directive_id}/tags`
+
+List all tags attached to a directive.
+
+**Path parameters:** `directive_id` (UUID)
+
+**Response:** `200 OK` -- `list[TagResponse]`
+
+**Error:** `404` if directive not found.
+
+### `POST /api/directives/{directive_id}/tags/{tag_id}`
+
+Attach a tag to a directive. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `directive_id` | UUID | Directive to tag |
+| `tag_id` | UUID | Tag to attach |
+
+**Response:** `200 OK` -- `TagResponse`
+
+**Error:** `404` if directive or tag not found.
+
+### `DELETE /api/directives/{directive_id}/tags/{tag_id}`
+
+Detach a tag from a directive.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `directive_id` | UUID | Directive to untag |
+| `tag_id` | UUID | Tag to detach |
+
+**Response:** `204 No Content`
+
+**Errors:**
+- `404` if directive or tag not found
+- `404` if the tag is not currently attached to the directive
+
+---
+
+## Skills
+
+Operating modes that bundle domains, protocols, and directives into loadable contexts. A skill defines how an agent behaves -- which life areas it works with, what procedures it follows, and what rules constrain it.
+
+### `POST /api/skills`
+
+Create a new skill with optional relationship linking at creation time.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `name` | string | yes | max 100 chars, **unique** | Skill name |
+| `description` | string | no | max 5000 chars | What this skill is for |
+| `adhd_patterns` | string | no | max 10,000 chars | ADHD-specific behavioral guidance for this context |
+| `artifact_id` | UUID | no | must reference existing artifact | Linked reference document |
+| `is_seedable` | boolean | no | default: `true` | Whether this skill can be used in seed scripts |
+| `is_default` | boolean | no | default: `false` | Whether this is the default skill. **At most one skill can be default.** |
+| `domain_ids` | list[UUID] | no | | Domains to link at creation |
+| `protocol_ids` | list[UUID] | no | | Protocols to link at creation |
+| `directive_ids` | list[UUID] | no | | Directives to link at creation |
+
+**Response:** `201 Created` -- `SkillResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Generated unique identifier |
+| `name` | string | Skill name |
+| `description` | string or null | Description |
+| `adhd_patterns` | string or null | ADHD behavioral guidance |
+| `artifact_id` | UUID or null | Linked artifact ID |
+| `is_seedable` | boolean | Seedable flag |
+| `is_default` | boolean | Default skill flag |
+| `created_at` | datetime | Creation timestamp (UTC) |
+| `updated_at` | datetime | Last modification timestamp (UTC) |
+| `domains` | list[DomainResponse] | Linked domains |
+| `protocols` | list[ProtocolResponse] | Linked protocols |
+| `directives` | list[DirectiveResponse] | Linked directives |
+
+**Errors:**
+- `400` if `artifact_id` or any ID in `domain_ids`, `protocol_ids`, `directive_ids` does not exist
+- `409` if a skill with this name already exists
+- `409` if `is_default=true` but another skill is already the default
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:8000/api/skills \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "core-protocol",
+    "description": "Default operating mode for all BRAIN agents",
+    "is_seedable": true,
+    "is_default": true,
+    "domain_ids": ["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+    "protocol_ids": ["b2c3d4e5-f6a7-8901-bcde-f23456789012"]
+  }'
+```
+
+### `POST /api/skills/batch`
+
+Batch create skills. Atomic -- all succeed or all fail.
+
+**Request body:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `items` | list[SkillCreate] | yes | max 100 items | Skills to create |
+
+**Response:** `201 Created`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `created` | list[SkillResponse] | All created skills |
+| `count` | integer | Number of skills created |
+
+**Errors:**
+- `400` if any referenced entity does not exist
+- `409` if any name conflicts or `is_default` constraint is violated
+- `422` if any item fails schema validation
+
+### `GET /api/skills`
+
+List skills with resolved relationships. Ordered by `created_at` descending.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `search` | string | no | Case-insensitive substring match on name |
+| `is_seedable` | boolean | no | Filter by seedable status |
+| `is_default` | boolean | no | Filter by default status |
+| `domain_id` | UUID | no | Filter to skills linked to this domain |
+
+**Response:** `200 OK` -- `list[SkillResponse]`
+
+**Example:**
+
+```bash
+# Find the default skill
+curl "http://localhost:8000/api/skills?is_default=true"
+
+# Skills linked to a specific domain
+curl "http://localhost:8000/api/skills?domain_id=a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+```
+
+### `GET /api/skills/{skill_id}`
+
+Get a single skill with resolved relationships.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `200 OK` -- `SkillResponse`
+
+**Error:** `404` if skill not found.
+
+### `GET /api/skills/{skill_id}/full`
+
+Bootstrap endpoint. Returns a skill with fully resolved relationships **and** grouped directives (global + skill-scoped, sorted by priority descending).
+
+Use this at session start to load an agent's complete operating context in a single call.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `200 OK` -- `SkillFullResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Skill identifier |
+| `name` | string | Skill name |
+| `description` | string or null | Description |
+| `adhd_patterns` | string or null | ADHD behavioral guidance |
+| `is_seedable` | boolean | Seedable flag |
+| `is_default` | boolean | Default skill flag |
+| `created_at` | datetime | Creation timestamp |
+| `updated_at` | datetime | Last modification timestamp |
+| `artifact` | ArtifactResponse or null | Resolved linked artifact |
+| `domains` | list[DomainResponse] | Linked domains |
+| `protocols` | list[ProtocolResponse] | Linked protocols with steps |
+| `directives` | SkillDirectivesGrouped | Grouped directives (see below) |
+
+**SkillDirectivesGrouped:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `global_directives` | list[DirectiveResponse] | All global directives, sorted by priority desc |
+| `skill` | list[DirectiveResponse] | Directives scoped to this skill, sorted by priority desc |
+
+**Error:** `404` if skill not found.
+
+**Example:**
+
+```bash
+curl http://localhost:8000/api/skills/c3d4e5f6-a7b8-9012-cdef-345678901234/full
+```
+
+```json
+{
+  "id": "c3d4e5f6-a7b8-9012-cdef-345678901234",
+  "name": "core-protocol",
+  "description": "Default operating mode for all BRAIN agents",
+  "adhd_patterns": null,
+  "is_seedable": true,
+  "is_default": true,
+  "created_at": "2026-04-01T12:00:00+00:00",
+  "updated_at": "2026-04-01T12:00:00+00:00",
+  "artifact": null,
+  "domains": [{"id": "...", "name": "Engineering", "...": "..."}],
+  "protocols": [{"id": "...", "name": "session-startup", "steps": [...], "...": "..."}],
+  "directives": {
+    "global_directives": [
+      {"id": "...", "name": "No silent assumptions", "priority": 9, "...": "..."},
+      {"id": "...", "name": "Log issues, don't fix inline", "priority": 7, "...": "..."}
+    ],
+    "skill": [
+      {"id": "...", "name": "Document reality not intent", "priority": 8, "...": "..."}
+    ]
+  }
+}
+```
+
+### `PATCH /api/skills/{skill_id}`
+
+Partial update of a skill's properties. Does not modify relationships -- use the link/unlink endpoints below.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | no | Skill name (max 100, must be unique) |
+| `description` | string | no | Description (max 5000) |
+| `adhd_patterns` | string | no | ADHD guidance (max 10,000) |
+| `artifact_id` | UUID | no | Linked artifact |
+| `is_seedable` | boolean | no | Seedable flag |
+| `is_default` | boolean | no | Default flag (at most one skill) |
+
+**Response:** `200 OK` -- `SkillResponse`
+
+**Errors:**
+- `404` if skill not found
+- `409` if name conflicts or `is_default` constraint violated
+
+### `DELETE /api/skills/{skill_id}`
+
+Delete a skill. Cascades to all join-table entries (skill-domain, skill-protocol, skill-directive links).
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `204 No Content`
+
+**Error:** `404` if skill not found.
+
+---
+
+## Skill-Domain Associations
+
+Link and unlink domains to skills.
+
+### `GET /api/skills/{skill_id}/domains`
+
+List domains linked to a skill.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `200 OK` -- `list[DomainResponse]`
+
+**Error:** `404` if skill not found.
+
+### `POST /api/skills/{skill_id}/domains/{domain_id}`
+
+Link a domain to a skill. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `domain_id` | UUID | Domain to link |
+
+**Response:** `200 OK` -- `DomainResponse`
+
+**Error:** `404` if skill or domain not found.
+
+### `DELETE /api/skills/{skill_id}/domains/{domain_id}`
+
+Unlink a domain from a skill.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `domain_id` | UUID | Domain to unlink |
+
+**Response:** `204 No Content`
+
+**Error:** `404` if skill or domain not found, or link does not exist.
+
+---
+
+## Skill-Protocol Associations
+
+Link and unlink protocols to skills.
+
+### `GET /api/skills/{skill_id}/protocols`
+
+List protocols linked to a skill.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `200 OK` -- `list[ProtocolResponse]`
+
+**Error:** `404` if skill not found.
+
+### `POST /api/skills/{skill_id}/protocols/{protocol_id}`
+
+Link a protocol to a skill. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `protocol_id` | UUID | Protocol to link |
+
+**Response:** `200 OK` -- `ProtocolResponse`
+
+**Error:** `404` if skill or protocol not found.
+
+### `DELETE /api/skills/{skill_id}/protocols/{protocol_id}`
+
+Unlink a protocol from a skill.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `protocol_id` | UUID | Protocol to unlink |
+
+**Response:** `204 No Content`
+
+**Error:** `404` if skill or protocol not found, or link does not exist.
+
+---
+
+## Skill-Directive Associations
+
+Link and unlink directives to skills.
+
+### `GET /api/skills/{skill_id}/directives`
+
+List directives linked to a skill.
+
+**Path parameters:** `skill_id` (UUID)
+
+**Response:** `200 OK` -- `list[DirectiveResponse]`
+
+**Error:** `404` if skill not found.
+
+### `POST /api/skills/{skill_id}/directives/{directive_id}`
+
+Link a directive to a skill. Idempotent.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `directive_id` | UUID | Directive to link |
+
+**Response:** `200 OK` -- `DirectiveResponse`
+
+**Error:** `404` if skill or directive not found.
+
+### `DELETE /api/skills/{skill_id}/directives/{directive_id}`
+
+Unlink a directive from a skill.
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skill_id` | UUID | Skill to modify |
+| `directive_id` | UUID | Directive to unlink |
+
+**Response:** `204 No Content`
+
+**Error:** `404` if skill or directive not found, or link does not exist.
+
+---
+
 ## Composable Filter Reference
 
 ### Task Filters
@@ -1605,12 +2814,53 @@ curl "http://localhost:8000/api/tasks?cognitive_type=errand&status=pending&due_b
 | `logged_before` | datetime | Entries logged on or before this timestamp |
 | `has_task` | boolean | `true`/`false` to filter by presence of task reference |
 | `has_routine` | boolean | `true`/`false` to filter by presence of routine reference |
+| `tag` | string | Comma-separated tag names (AND logic) |
+
+#### Artifacts (`GET /api/artifacts`)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `artifact_type` | string | `document`, `protocol`, `brief`, `prompt`, `template`, `journal`, `spec` |
+| `is_seedable` | boolean | Filter by seedable status |
+| `search` | string | Case-insensitive substring match on title |
+| `parent_id` | UUID | Filter to children of a specific artifact |
+| `tag` | string | Comma-separated tag names (AND logic) |
+
+#### Protocols (`GET /api/protocols`)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `search` | string | Case-insensitive substring match on name |
+| `is_seedable` | boolean | Filter by seedable status |
+| `has_artifact` | boolean | Filter by presence of linked artifact |
+| `tag` | string | Comma-separated tag names (AND logic) |
+
+#### Directives (`GET /api/directives`)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scope` | string | `global`, `skill`, `agent` |
+| `scope_ref` | UUID | Filter by scope reference |
+| `is_seedable` | boolean | Filter by seedable status |
+| `priority_min` | integer | Minimum priority (1-10, inclusive) |
+| `priority_max` | integer | Maximum priority (1-10, inclusive) |
+| `search` | string | Case-insensitive substring match on name |
+| `tag` | string | Comma-separated tag names (AND logic) |
+
+#### Skills (`GET /api/skills`)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `search` | string | Case-insensitive substring match on name |
+| `is_seedable` | boolean | Filter by seedable status |
+| `is_default` | boolean | Filter by default status |
+| `domain_id` | UUID | Filter to skills linked to this domain |
 
 ---
 
 ## Endpoint Index
 
-Quick reference of all 53 endpoints.
+Quick reference of all endpoints by section.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -1635,6 +2885,7 @@ Quick reference of all 53 endpoints.
 | `DELETE` | `/api/projects/{project_id}` | Delete project (cascades) |
 | **Tasks** | | |
 | `POST` | `/api/tasks` | Create task |
+| `POST` | `/api/tasks/batch` | Batch create tasks (max 100, atomic) |
 | `GET` | `/api/tasks` | List tasks (12 composable filters) |
 | `GET` | `/api/tasks/{task_id}` | Get task with tags |
 | `PATCH` | `/api/tasks/{task_id}` | Update task (auto-manages completed_at) |
@@ -1646,7 +2897,12 @@ Quick reference of all 53 endpoints.
 | `PATCH` | `/api/tags/{tag_id}` | Update tag |
 | `DELETE` | `/api/tags/{tag_id}` | Delete tag (cascades associations) |
 | `GET` | `/api/tags/{tag_id}/tasks` | List tasks with this tag |
+| `GET` | `/api/tags/{tag_id}/activities` | List activities with this tag |
+| `GET` | `/api/tags/{tag_id}/artifacts` | List artifacts with this tag |
+| `GET` | `/api/tags/{tag_id}/protocols` | List protocols with this tag |
+| `GET` | `/api/tags/{tag_id}/directives` | List directives with this tag |
 | **Task-Tag Associations** | | |
+| `POST` | `/api/tasks/{task_id}/tags/batch` | Batch attach tags (max 100, idempotent) |
 | `GET` | `/api/tasks/{task_id}/tags` | List tags on a task |
 | `POST` | `/api/tasks/{task_id}/tags/{tag_id}` | Attach tag to task (idempotent) |
 | `DELETE` | `/api/tasks/{task_id}/tags/{tag_id}` | Detach tag from task |
@@ -1667,18 +2923,79 @@ Quick reference of all 53 endpoints.
 | `PATCH` | `/api/checkins/{checkin_id}` | Update check-in |
 | `DELETE` | `/api/checkins/{checkin_id}` | Delete check-in |
 | **Activity Log** | | |
-| `POST` | `/api/activity` | Create activity entry |
-| `GET` | `/api/activity` | List activity (filter: action_type, task_id, routine_id, logged_after, logged_before, has_task, has_routine) |
+| `POST` | `/api/activity` | Create activity entry (supports tag_ids) |
+| `POST` | `/api/activity/batch` | Batch create activity entries (max 100, atomic) |
+| `GET` | `/api/activity` | List activity (filter: action_type, task_id, routine_id, dates, has_task, has_routine, tag) |
 | `GET` | `/api/activity/{entry_id}` | Get activity with resolved references |
 | `PATCH` | `/api/activity/{entry_id}` | Update activity entry |
 | `DELETE` | `/api/activity/{entry_id}` | Delete activity entry |
+| **Activity-Tag Associations** | | |
+| `POST` | `/api/activity/{activity_id}/tags/batch` | Batch attach tags (max 100, idempotent) |
+| `GET` | `/api/activity/{activity_id}/tags` | List tags on an activity |
+| `POST` | `/api/activity/{activity_id}/tags/{tag_id}` | Attach tag to activity (idempotent) |
+| `DELETE` | `/api/activity/{activity_id}/tags/{tag_id}` | Detach tag from activity |
 | **Reports** | | |
 | `GET` | `/api/reports/activity-summary` | Activity stats for period (required: after, before) |
 | `GET` | `/api/reports/domain-balance` | Per-domain health snapshot (no params) |
 | `GET` | `/api/reports/routine-adherence` | Routine completion rates (required: after, before) |
 | `GET` | `/api/reports/friction-analysis` | Predicted vs actual friction (optional: after, before) |
+| **Artifacts** | | |
+| `POST` | `/api/artifacts` | Create artifact (supports tag_ids) |
+| `POST` | `/api/artifacts/batch` | Batch create artifacts (**max 25**, atomic) |
+| `GET` | `/api/artifacts` | List artifacts (filter: artifact_type, is_seedable, search, parent_id, tag) |
+| `GET` | `/api/artifacts/{artifact_id}` | Get artifact with content and resolved parent |
+| `PATCH` | `/api/artifacts/{artifact_id}` | Update artifact (auto-increments version on content change) |
+| `DELETE` | `/api/artifacts/{artifact_id}` | Delete artifact (children get parent_id=NULL) |
+| **Artifact-Tag Associations** | | |
+| `POST` | `/api/artifacts/{artifact_id}/tags/batch` | Batch attach tags (max 100, idempotent) |
+| `GET` | `/api/artifacts/{artifact_id}/tags` | List tags on an artifact |
+| `POST` | `/api/artifacts/{artifact_id}/tags/{tag_id}` | Attach tag to artifact (idempotent) |
+| `DELETE` | `/api/artifacts/{artifact_id}/tags/{tag_id}` | Detach tag from artifact |
+| **Protocols** | | |
+| `POST` | `/api/protocols` | Create protocol (unique name, supports tag_ids) |
+| `POST` | `/api/protocols/batch` | Batch create protocols (max 100, atomic) |
+| `GET` | `/api/protocols` | List protocols (filter: search, is_seedable, has_artifact, tag) |
+| `GET` | `/api/protocols/{protocol_id}` | Get protocol with resolved artifact |
+| `PATCH` | `/api/protocols/{protocol_id}` | Update protocol (auto-increments version on steps/description change) |
+| `DELETE` | `/api/protocols/{protocol_id}` | Delete protocol |
+| **Protocol-Tag Associations** | | |
+| `GET` | `/api/protocols/{protocol_id}/tags` | List tags on a protocol |
+| `POST` | `/api/protocols/{protocol_id}/tags/{tag_id}` | Attach tag to protocol (idempotent) |
+| `DELETE` | `/api/protocols/{protocol_id}/tags/{tag_id}` | Detach tag from protocol |
+| **Directives** | | |
+| `GET` | `/api/directives/resolve` | Resolve merged directive set (filter: skill_id, scope_ref) |
+| `POST` | `/api/directives` | Create directive (supports tag_ids) |
+| `POST` | `/api/directives/batch` | Batch create directives (max 100, atomic) |
+| `GET` | `/api/directives` | List directives (filter: scope, scope_ref, is_seedable, priority_min/max, search, tag) |
+| `GET` | `/api/directives/{directive_id}` | Get directive |
+| `PATCH` | `/api/directives/{directive_id}` | Update directive (post-merge scope validation) |
+| `DELETE` | `/api/directives/{directive_id}` | Delete directive |
+| **Directive-Tag Associations** | | |
+| `GET` | `/api/directives/{directive_id}/tags` | List tags on a directive |
+| `POST` | `/api/directives/{directive_id}/tags/{tag_id}` | Attach tag to directive (idempotent) |
+| `DELETE` | `/api/directives/{directive_id}/tags/{tag_id}` | Detach tag from directive |
+| **Skills** | | |
+| `POST` | `/api/skills` | Create skill (unique name, bulk linking) |
+| `POST` | `/api/skills/batch` | Batch create skills (max 100, atomic) |
+| `GET` | `/api/skills` | List skills (filter: search, is_seedable, is_default, domain_id) |
+| `GET` | `/api/skills/{skill_id}` | Get skill with relationships |
+| `GET` | `/api/skills/{skill_id}/full` | Bootstrap: skill with resolved context and grouped directives |
+| `PATCH` | `/api/skills/{skill_id}` | Update skill properties |
+| `DELETE` | `/api/skills/{skill_id}` | Delete skill (cascades join tables) |
+| **Skill-Domain Associations** | | |
+| `GET` | `/api/skills/{skill_id}/domains` | List domains on a skill |
+| `POST` | `/api/skills/{skill_id}/domains/{domain_id}` | Link domain to skill (idempotent) |
+| `DELETE` | `/api/skills/{skill_id}/domains/{domain_id}` | Unlink domain from skill |
+| **Skill-Protocol Associations** | | |
+| `GET` | `/api/skills/{skill_id}/protocols` | List protocols on a skill |
+| `POST` | `/api/skills/{skill_id}/protocols/{protocol_id}` | Link protocol to skill (idempotent) |
+| `DELETE` | `/api/skills/{skill_id}/protocols/{protocol_id}` | Unlink protocol from skill |
+| **Skill-Directive Associations** | | |
+| `GET` | `/api/skills/{skill_id}/directives` | List directives on a skill |
+| `POST` | `/api/skills/{skill_id}/directives/{directive_id}` | Link directive to skill (idempotent) |
+| `DELETE` | `/api/skills/{skill_id}/directives/{directive_id}` | Unlink directive from skill |
 
 ---
 
-*API Reference -- BRAIN 3.0 v1.0.0*
-*Generated by Apollo Swagger -- Project Flux Meridian -- March 2026*
+*API Reference -- BRAIN 3.0 v1.2.0*
+*Generated by Apollo Swagger -- Project Flux Meridian -- April 2026*

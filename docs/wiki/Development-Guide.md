@@ -94,7 +94,7 @@ ruff check .           # Lint
 
 - Every API endpoint gets: happy path, validation, not found (404), and filter tests
 - Tests must be independent — each creates its own data
-- Use the helper fixtures in `tests/conftest.py` (`make_domain`, `make_goal`, `make_task`, etc.)
+- Use the helper fixtures in `tests/conftest.py` (`make_domain`, `make_goal`, `make_task`, `make_artifact`, `make_protocol`, `make_directive`, `make_skill`, etc.)
 
 ---
 

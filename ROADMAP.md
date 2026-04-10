@@ -14,9 +14,9 @@ For individual issue details, see the [GitHub Issues](https://github.com/WilliM2
 | Version | Name | Focus | Status |
 |---------|------|-------|--------|
 | **v1.0.0** | The Core Loop | Seven-pillar data model, full CRUD API, MCP integration, TrueNAS deployment | ✅ Shipped |
-| **v1.0.1** | Patch | Bug fix + license housekeeping | 🟡 Ready |
-| **v1.1.0** | Activity Tags | First feature release — tagging on activity log entries | 🟡 Design Complete |
-| **v1.2.0** | The Data Layer | Artifacts entity + batch-first API design | 📐 Needs Design |
+| **v1.0.1** | Patch | Bug fix + license housekeeping | ✅ Shipped |
+| **v1.1.0** | Activity Tags | Tagging on activity log entries | ✅ Shipped |
+| **v1.2.0** | The Knowledge Layer | Artifacts, Protocols, Directives, Skills, Batch API, seed framework | ✅ Shipped |
 | **v1.3.0** | Graduated Scaffolding | Routines that phase out support as habits solidify | 📐 Needs Design |
 | **v2.0.0** | The System Gets Proactive | Scheduler, Home Assistant integration, push notifications | 🔭 Planned |
 | **v3.0.0** | Browse and Manage Directly | Mobile-first web UI, dashboard, visual reporting | 🔭 Planned |
@@ -36,64 +36,37 @@ Quality: 293 unit tests, 131 UAT tests (128 pass, 0 fail, 3 partial — natural 
 
 ---
 
-## v1.0.1 — Patch 🟡
+## v1.0.1 — Patch ✅
 
-**Scope:** Bug fix + license housekeeping. No design decisions needed.
+**Shipped**
 
-| Issue | Title | Type |
-|-------|-------|------|
-| [#69](https://github.com/WilliM233/brain3/issues/69) | `progress_pct` returns 0% when completed tasks exist in project | Bug (minor) |
-| [#58](https://github.com/WilliM233/brain3/issues/58) | Add AGPL-3.0 header notices to source files | Chore |
-
-**Why this is first:** Clean up before building new. The progress bug affects project reporting accuracy. The AGPL headers are a legal best practice following the license switch from MIT (PR #57). Neither requires design — just execution.
-
-**Owner:** Desmond Ops (single pass)
+Bug fix + license housekeeping. Progress percentage fix and AGPL-3.0 header notices.
 
 ---
 
-## v1.1.0 — Activity Tags 🟡
+## v1.1.0 — Activity Tags ✅
 
-**Scope:** Tags on activity log entries. First feature release.
+**Shipped**
 
-| Issue | Title | Type |
-|-------|-------|------|
-| [#73](https://github.com/WilliM233/brain3/issues/73) | Tags on Activity Log Entries | Feature |
-
-**What it unlocks:**
-- **Session handoff filtering** — tag activity entries with `session-handoff` for clean context loading between sessions
-- **FluxNook media reviews** — log movie watches as tagged activity entries with mood, energy, and notes, queryable by tag
-- **Life logging** — the activity log becomes a flexible journal, not just a productivity tracker
-
-**Design:** Mirrors the existing `task_tags` many-to-many pattern. New `activity_tags` association table, tag/untag endpoints, tag filter on `list_activity`. Additive — no breaking changes.
-
-**Why this order:** Small scope, high value. Unlocks two major use cases (session handoffs and FluxNook) without requiring the larger architectural work of v1.2.0. Proves the release cadence works.
+Tags on activity log entries. Mirrors the `task_tags` pattern — `activity_tags` association table, tag/untag endpoints, tag filter on `list_activity`, reverse lookup. Unlocked session handoff filtering, FluxNook media reviews, and flexible life logging.
 
 ---
 
-## v1.2.0 — The Data Layer 📐
+## v1.2.0 — The Knowledge Layer ✅
 
-**Scope:** Artifacts entity + batch-first API. "It's all about storing data."
+**Shipped:** April 2026
 
-| Issue | Title | Type |
-|-------|-------|------|
-| [#74](https://github.com/WilliM233/brain3/issues/74) | Artifacts — living reference documents linked to tasks | Feature |
-| [#75](https://github.com/WilliM233/brain3/issues/75) | Batch-first API design for all current and future endpoints | Enhancement |
+**Scope:** Persistent knowledge entities, batch API, and seed framework. The release that gives the system memory across sessions.
 
-**Artifacts** — A new entity type for living reference materials (Release Playbook, Team Charter, agent briefs, design documents). Artifacts have their own lifecycle — they're consulted, versioned, and updated over time. They aren't tasks and they aren't activity log entries. Key design questions:
-- Schema: title, content/pointer, version, tags, origin task linkage
-- Versioning: do updates create new versions with history preserved?
-- Querying: independently searchable by tag, title, linked task
-- Phase 3 UI: artifacts give a "documents" view separate from the task list
-
-**Batch-first API** — Every entity that supports create, update, or attachment operations gets a batch variant. Discovered during production onboarding when 40+ tag operations hit Claude's tool call limits. Candidates: tag attachment, task creation, status updates, activity logging, check-in backfill. Design questions:
-- Endpoint pattern: `POST /api/{entity}/batch`
-- Transactional behavior: all-or-nothing vs. partial success (per endpoint)
-- Max batch size limits
-- MCP tool variants (e.g., `batch_tag_tasks`)
-
-**Why together:** Both are about how data gets into and lives inside BRAIN. Artifacts adds a new storage concept; batch-first makes existing storage faster. They complement each other and share the same release testing surface.
-
-**Open design work:** Both need dedicated design sessions before implementation.
+**What shipped:**
+- **Artifacts** — versioned reference documents with content storage (512KB), parent/child hierarchy, 7 type categories, tagging
+- **Protocols** — structured step-by-step procedures (JSON steps, max 50), linked to optional source artifacts, auto-versioned
+- **Directives** — behavioral rules with scoped priority (global/skill/agent), priority 1-10, directive resolution endpoint
+- **Skills** — named operating modes with many-to-many links to domains, protocols, and directives; `get_skill_full` bootstrap endpoint
+- **Batch API** — atomic bulk create for 6 entity types, batch tag attachment for 3 entity types
+- **Seed framework** — idempotent JSON-based data loading with cross-reference resolution, CLI tooling
+- **Content migration** — script for migrating existing reference documents into Artifacts
+- **109 API endpoints**, 621 tests, QA and security reviews complete
 
 ---
 
@@ -174,5 +147,5 @@ These guide every release decision:
 
 ---
 
-*Last updated: March 31, 2026*
+*Last updated: April 10, 2026*
 *BRAIN 3.0 · Project Flux Meridian*

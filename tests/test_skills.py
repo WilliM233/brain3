@@ -21,7 +21,6 @@ import uuid
 
 from tests.conftest import FAKE_UUID, make_domain
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -193,7 +192,7 @@ class TestListSkills:
 
     def test_list_includes_relationships(self, client):
         domain = make_domain(client)
-        skill = make_skill(client, name="with-domain", domain_ids=[domain["id"]])
+        make_skill(client, name="with-domain", domain_ids=[domain["id"]])
         resp = client.get("/api/skills")
         body = resp.json()
         assert len(body) == 1

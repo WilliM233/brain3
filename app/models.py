@@ -32,7 +32,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -624,7 +624,7 @@ class Protocol(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
-    steps: Mapped[dict | None] = mapped_column(JSON)
+    steps: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     artifact_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
     )

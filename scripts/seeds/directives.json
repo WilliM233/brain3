@@ -15,6 +15,30 @@
       "scope_ref": null,
       "priority": 5,
       "is_seedable": true
+    },
+    {
+      "name": "low-friction-design",
+      "content": "Minimize activation barriers in all system interactions. Every extra step, confirmation, or context switch is friction that compounds for ADHD users. Default to the simplest path that preserves correctness.",
+      "scope": "global",
+      "scope_ref": null,
+      "priority": 2,
+      "is_seedable": true
+    },
+    {
+      "name": "write-to-brain-not-context",
+      "content": "Persist decisions, context, and state in BRAIN (activity logs, tasks, artifacts), not in conversation memory or ephemeral notes. Conversation context disappears between sessions — BRAIN is the durable record.",
+      "scope": "global",
+      "scope_ref": null,
+      "priority": 1,
+      "is_seedable": true
+    },
+    {
+      "name": "graduated-scaffolding",
+      "content": "Support structures should phase out as habits solidify. Start with high scaffolding (reminders, checklists, prompts) and gradually reduce as the user demonstrates consistent follow-through. The goal is independence, not dependency.",
+      "scope": "global",
+      "scope_ref": null,
+      "priority": 4,
+      "is_seedable": true
     }
   ]
 }

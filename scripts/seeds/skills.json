@@ -5,8 +5,16 @@
       "description": "Always-active base skill providing session management and standard operating procedures",
       "is_seedable": true,
       "is_default": true,
-      "protocol_names": ["session-startup", "bug-discovery"],
-      "directive_names": ["log-it-dont-fix-it"]
+      "protocol_names": ["session-startup", "session-shutdown", "bug-discovery"],
+      "directive_names": ["log-it-dont-fix-it", "low-friction-design", "write-to-brain-not-context", "graduated-scaffolding", "match-tasks-to-energy"]
+    },
+    {
+      "name": "po-dev",
+      "description": "Product owner and development mode — shipping features, managing releases, and technical decision-making",
+      "is_seedable": true,
+      "is_default": false,
+      "protocol_names": ["release-pipeline"],
+      "directive_names": []
     },
     {
       "name": "wellness",
@@ -15,6 +23,14 @@
       "is_default": false,
       "protocol_names": [],
       "directive_names": ["match-tasks-to-energy"]
+    },
+    {
+      "name": "life-admin",
+      "description": "Errands, household, and finance management mode — tracking non-technical responsibilities and routine maintenance",
+      "is_seedable": true,
+      "is_default": false,
+      "protocol_names": [],
+      "directive_names": []
     }
   ]
 }

@@ -56,20 +56,25 @@ def batch_create_tasks(
 ) -> dict:
     """Batch create tasks. Atomic — all succeed or all fail."""
     created = []
-    for idx, item in enumerate(payload.items):
-        if item.project_id is not None:
-            project = db.query(Project).filter(Project.id == item.project_id).first()
-            if not project:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Batch item {idx}: Project not found (project_id: {item.project_id})",
-                )
+    try:
+        for idx, item in enumerate(payload.items):
+            if item.project_id is not None:
+                project = db.query(Project).filter(Project.id == item.project_id).first()
+                if not project:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Project not found"
+                    f" (project_id: {item.project_id})",
+                    )
 
-        task = Task(**item.model_dump())
-        db.add(task)
-        created.append(task)
+            task = Task(**item.model_dump())
+            db.add(task)
+            db.flush()
+            created.append(task)
+    except HTTPException:
+        db.rollback()
+        raise
 
-    db.flush()
     db.commit()
     for task in created:
         db.refresh(task)

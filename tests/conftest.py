@@ -161,4 +161,46 @@ def make_checkin(client: TestClient, **overrides) -> dict:
     return resp.json()
 
 
+def make_artifact(client: TestClient, **overrides) -> dict:
+    """Create an artifact via the API and return the response JSON."""
+    data = {
+        "title": "Test Artifact",
+        "artifact_type": "prompt",
+        "content": "Test content",
+        **overrides,
+    }
+    resp = client.post("/api/artifacts", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def make_protocol(client: TestClient, **overrides) -> dict:
+    """Create a protocol via the API and return the response JSON."""
+    data = {"name": f"test-protocol-{uuid.uuid4().hex[:8]}", **overrides}
+    resp = client.post("/api/protocols", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def make_directive(client: TestClient, **overrides) -> dict:
+    """Create a directive via the API and return the response JSON."""
+    data = {
+        "name": f"test-directive-{uuid.uuid4().hex[:8]}",
+        "content": "Test content",
+        "scope": "global",
+        **overrides,
+    }
+    resp = client.post("/api/directives", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def make_skill(client: TestClient, **overrides) -> dict:
+    """Create a skill via the API and return the response JSON."""
+    data = {"name": f"test-skill-{uuid.uuid4().hex[:8]}", **overrides}
+    resp = client.post("/api/skills", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 FAKE_UUID = str(uuid.uuid4())

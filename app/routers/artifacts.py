@@ -29,6 +29,11 @@ from app.schemas.artifacts import (
     ArtifactResponse,
     ArtifactUpdate,
 )
+from app.schemas.batch import (
+    BatchArtifactCreate,
+    BatchArtifactCreateResponse,
+    BatchTagAttachRequest,
+)
 from app.schemas.tags import TagResponse
 
 router = APIRouter()
@@ -69,6 +74,58 @@ def create_artifact(payload: ArtifactCreate, db: Session = Depends(get_db)) -> A
     db.commit()
     db.refresh(artifact)
     return artifact
+
+
+@router.post(
+    "/batch", response_model=BatchArtifactCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def batch_create_artifacts(
+    payload: BatchArtifactCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create artifacts. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            if item.parent_id is not None:
+                if not db.query(Artifact).filter(Artifact.id == item.parent_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Parent artifact not found"
+                        f" (parent_id: {item.parent_id})",
+                    )
+
+            tags = []
+            if item.tag_ids:
+                for tid in item.tag_ids:
+                    tag = db.query(Tag).filter(Tag.id == tid).first()
+                    if not tag:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Tag {tid} not found",
+                        )
+                    tags.append(tag)
+
+            content_size = len(item.content.encode("utf-8"))
+            artifact = Artifact(
+                **item.model_dump(exclude={"tag_ids"}),
+                content_size=content_size,
+            )
+            db.add(artifact)
+            db.flush()
+
+            for tag in tags:
+                db.add(ArtifactTag(artifact_id=artifact.id, tag_id=tag.id))
+
+            created.append(artifact)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+    for artifact in created:
+        db.refresh(artifact)
+    return {"created": created, "count": len(created)}
 
 
 @router.get("/", response_model=list[ArtifactResponse])
@@ -173,6 +230,40 @@ def delete_artifact(artifact_id: UUID, db: Session = Depends(get_db)) -> None:
 # ---------------------------------------------------------------------------
 # Artifact-Tag attachment — /api/artifacts/{artifact_id}/tags
 # ---------------------------------------------------------------------------
+
+
+@artifact_tags_router.post(
+    "/{artifact_id}/tags/batch", response_model=list[TagResponse],
+)
+def batch_attach_tags_to_artifact(
+    artifact_id: UUID,
+    payload: BatchTagAttachRequest,
+    db: Session = Depends(get_db),
+) -> list[Tag]:
+    """Attach multiple tags to an artifact. Idempotent."""
+    artifact = db.query(Artifact).filter(Artifact.id == artifact_id).first()
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    tags = []
+    for tid in payload.tag_ids:
+        tag = db.query(Tag).filter(Tag.id == tid).first()
+        if not tag:
+            raise HTTPException(status_code=400, detail=f"Tag {tid} not found")
+        tags.append(tag)
+
+    for tag in tags:
+        existing = (
+            db.query(ArtifactTag)
+            .filter(ArtifactTag.artifact_id == artifact_id, ArtifactTag.tag_id == tag.id)
+            .first()
+        )
+        if not existing:
+            db.add(ArtifactTag(artifact_id=artifact_id, tag_id=tag.id))
+
+    db.commit()
+    db.refresh(artifact)
+    return artifact.tags
 
 
 @artifact_tags_router.get("/{artifact_id}/tags", response_model=list[TagResponse])

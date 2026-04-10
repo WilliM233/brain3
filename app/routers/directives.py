@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Directive, DirectiveTag, Tag
+from app.schemas.batch import BatchDirectiveCreate, BatchDirectiveCreateResponse
 from app.schemas.directives import (
     DirectiveCreate,
     DirectiveResolveResponse,
@@ -86,6 +87,48 @@ def resolve_directives(
 # ---------------------------------------------------------------------------
 # Directive CRUD — /api/directives
 # ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/batch", response_model=BatchDirectiveCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def batch_create_directives(
+    payload: BatchDirectiveCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create directives. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            tags = []
+            if item.tag_ids:
+                for tid in item.tag_ids:
+                    tag = db.query(Tag).filter(Tag.id == tid).first()
+                    if not tag:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Tag {tid} not found",
+                        )
+                    tags.append(tag)
+
+            directive = Directive(
+                **item.model_dump(exclude={"tag_ids"}),
+            )
+            db.add(directive)
+            db.flush()
+
+            for tag in tags:
+                db.add(DirectiveTag(directive_id=directive.id, tag_id=tag.id))
+
+            created.append(directive)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+    for directive in created:
+        db.refresh(directive)
+    return {"created": created, "count": len(created)}
 
 
 @router.post("/", response_model=DirectiveResponse, status_code=status.HTTP_201_CREATED)

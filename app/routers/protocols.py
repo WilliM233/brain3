@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models import Artifact, Protocol, ProtocolTag, Tag
+from app.schemas.batch import BatchProtocolCreate, BatchProtocolCreateResponse
 from app.schemas.protocols import (
     ProtocolCreate,
     ProtocolDetailResponse,
@@ -78,6 +79,70 @@ def create_protocol(payload: ProtocolCreate, db: Session = Depends(get_db)) -> P
     db.commit()
     db.refresh(protocol)
     return protocol
+
+
+@router.post(
+    "/batch", response_model=BatchProtocolCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def batch_create_protocols(
+    payload: BatchProtocolCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create protocols. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            # Unique name check
+            existing = db.query(Protocol).filter(Protocol.name == item.name).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Batch item {idx}: Protocol name already exists"
+                    f" ({item.name})",
+                )
+
+            if item.artifact_id is not None:
+                if not db.query(Artifact).filter(Artifact.id == item.artifact_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Artifact not found"
+                        f" (artifact_id: {item.artifact_id})",
+                    )
+
+            tags = []
+            if item.tag_ids:
+                for tid in item.tag_ids:
+                    tag = db.query(Tag).filter(Tag.id == tid).first()
+                    if not tag:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Tag {tid} not found",
+                        )
+                    tags.append(tag)
+
+            steps_data = None
+            if item.steps is not None:
+                steps_data = [s.model_dump() for s in item.steps]
+
+            protocol = Protocol(
+                **item.model_dump(exclude={"tag_ids", "steps"}),
+                steps=steps_data,
+            )
+            db.add(protocol)
+            db.flush()
+
+            for tag in tags:
+                db.add(ProtocolTag(protocol_id=protocol.id, tag_id=tag.id))
+
+            created.append(protocol)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+    for protocol in created:
+        db.refresh(protocol)
+    return {"created": created, "count": len(created)}
 
 
 @router.get("/", response_model=list[ProtocolResponse])

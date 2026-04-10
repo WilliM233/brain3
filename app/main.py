@@ -30,6 +30,7 @@ from app.routers import (
     domains,
     goals,
     projects,
+    protocols,
     reports,
     routines,
     tags,
@@ -84,4 +85,8 @@ app.include_router(
 app.include_router(artifacts.router, prefix="/api/artifacts", tags=["Artifacts"])
 app.include_router(
     artifacts.artifact_tags_router, prefix="/api/artifacts", tags=["Artifact Tags"],
+)
+app.include_router(protocols.router, prefix="/api/protocols", tags=["Protocols"])
+app.include_router(
+    protocols.protocol_tags_router, prefix="/api/protocols", tags=["Protocol Tags"],
 )

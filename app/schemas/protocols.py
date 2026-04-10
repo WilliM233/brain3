@@ -38,7 +38,7 @@ class ProtocolCreate(BaseModel):
 
     name: str = Field(max_length=100)
     description: str | None = Field(default=None, max_length=5000)
-    steps: list[ProtocolStep] | None = None
+    steps: list[ProtocolStep] | None = Field(default=None, max_length=50)
     artifact_id: UUID | None = None
     is_seedable: bool = True
     tag_ids: list[UUID] | None = None
@@ -49,7 +49,7 @@ class ProtocolUpdate(BaseModel):
 
     name: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=5000)
-    steps: list[ProtocolStep] | None = None
+    steps: list[ProtocolStep] | None = Field(default=None, max_length=50)
     artifact_id: UUID | None = None
     is_seedable: bool | None = None
 

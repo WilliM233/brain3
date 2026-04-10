@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ArtifactType = Literal[
     "document", "protocol", "brief", "prompt", "template", "journal", "spec"
@@ -39,6 +39,13 @@ class ArtifactCreate(BaseModel):
     is_seedable: bool = False
     tag_ids: list[UUID] | None = None
 
+    @field_validator("content")
+    @classmethod
+    def validate_content_byte_length(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > 524_288:
+            raise ValueError("Content exceeds 512KB byte limit")
+        return v
+
 
 class ArtifactUpdate(BaseModel):
     """All fields optional — supports partial PATCH updates."""
@@ -48,6 +55,13 @@ class ArtifactUpdate(BaseModel):
     content: str | None = Field(default=None, max_length=500_000)
     parent_id: UUID | None = None
     is_seedable: bool | None = None
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_byte_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v.encode("utf-8")) > 524_288:
+            raise ValueError("Content exceeds 512KB byte limit")
+        return v
 
 
 class ArtifactResponse(BaseModel):

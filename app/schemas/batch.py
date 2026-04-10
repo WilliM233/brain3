@@ -58,7 +58,7 @@ class BatchActivityCreate(BaseModel):
 class BatchArtifactCreate(BaseModel):
     """Batch create artifacts."""
 
-    items: list[ArtifactCreate] = Field(max_length=100)
+    items: list[ArtifactCreate] = Field(max_length=25)
 
 
 class BatchProtocolCreate(BaseModel):

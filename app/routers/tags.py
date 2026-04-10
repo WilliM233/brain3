@@ -25,6 +25,7 @@ from app.database import get_db
 from app.models import ActivityLog, Artifact, Directive, Protocol, Tag, Task, TaskTag
 from app.schemas.activity import ActivityLogResponse
 from app.schemas.artifacts import ArtifactResponse
+from app.schemas.batch import BatchTagAttachRequest
 from app.schemas.directives import DirectiveResponse
 from app.schemas.protocols import ProtocolResponse
 from app.schemas.tags import TagCreate, TagResponse, TagUpdate
@@ -190,6 +191,40 @@ def list_directives_for_tag(
 # ---------------------------------------------------------------------------
 # Task-Tag attachment — /api/tasks/{task_id}/tags
 # ---------------------------------------------------------------------------
+
+
+@task_tags_router.post(
+    "/{task_id}/tags/batch", response_model=list[TagResponse],
+)
+def batch_attach_tags_to_task(
+    task_id: UUID,
+    payload: BatchTagAttachRequest,
+    db: Session = Depends(get_db),
+) -> list[Tag]:
+    """Attach multiple tags to a task. Idempotent."""
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    tags = []
+    for tid in payload.tag_ids:
+        tag = db.query(Tag).filter(Tag.id == tid).first()
+        if not tag:
+            raise HTTPException(status_code=400, detail=f"Tag {tid} not found")
+        tags.append(tag)
+
+    for tag in tags:
+        existing = (
+            db.query(TaskTag)
+            .filter(TaskTag.task_id == task_id, TaskTag.tag_id == tag.id)
+            .first()
+        )
+        if not existing:
+            db.add(TaskTag(task_id=task_id, tag_id=tag.id))
+
+    db.commit()
+    db.refresh(task)
+    return task.tags
 
 
 @task_tags_router.get("/{task_id}/tags", response_model=list[TagResponse])

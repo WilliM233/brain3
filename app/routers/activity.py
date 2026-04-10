@@ -30,6 +30,11 @@ from app.schemas.activity import (
     ActivityLogResponse,
     ActivityLogUpdate,
 )
+from app.schemas.batch import (
+    BatchActivityCreate,
+    BatchActivityCreateResponse,
+    BatchTagAttachRequest,
+)
 from app.schemas.tags import TagResponse
 
 router = APIRouter()
@@ -68,6 +73,68 @@ def create_activity(payload: ActivityLogCreate, db: Session = Depends(get_db)) -
     db.commit()
     db.refresh(entry)
     return entry
+
+
+@router.post(
+    "/batch", response_model=BatchActivityCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def batch_create_activity(
+    payload: BatchActivityCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create activity log entries. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            if item.task_id is not None:
+                if not db.query(Task).filter(Task.id == item.task_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Task not found"
+                        f" (task_id: {item.task_id})",
+                    )
+            if item.routine_id is not None:
+                if not db.query(Routine).filter(Routine.id == item.routine_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Routine not found"
+                        f" (routine_id: {item.routine_id})",
+                    )
+            if item.checkin_id is not None:
+                if not db.query(StateCheckin).filter(StateCheckin.id == item.checkin_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Check-in not found"
+                        f" (checkin_id: {item.checkin_id})",
+                    )
+
+            tags = []
+            if item.tag_ids:
+                for tid in item.tag_ids:
+                    tag = db.query(Tag).filter(Tag.id == tid).first()
+                    if not tag:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Tag {tid} not found",
+                        )
+                    tags.append(tag)
+
+            entry = ActivityLog(**item.model_dump(exclude={"tag_ids"}))
+            db.add(entry)
+            db.flush()
+
+            for tag in tags:
+                db.add(ActivityTag(activity_id=entry.id, tag_id=tag.id))
+
+            created.append(entry)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+    for entry in created:
+        db.refresh(entry)
+    return {"created": created, "count": len(created)}
 
 
 @router.get("/", response_model=list[ActivityLogResponse])
@@ -182,6 +249,40 @@ def delete_activity(entry_id: UUID, db: Session = Depends(get_db)) -> None:
 # ---------------------------------------------------------------------------
 # Activity-Tag attachment — /api/activity/{activity_id}/tags
 # ---------------------------------------------------------------------------
+
+
+@activity_tags_router.post(
+    "/{activity_id}/tags/batch", response_model=list[TagResponse],
+)
+def batch_attach_tags_to_activity(
+    activity_id: UUID,
+    payload: BatchTagAttachRequest,
+    db: Session = Depends(get_db),
+) -> list[Tag]:
+    """Attach multiple tags to an activity log entry. Idempotent."""
+    entry = db.query(ActivityLog).filter(ActivityLog.id == activity_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Activity log entry not found")
+
+    tags = []
+    for tid in payload.tag_ids:
+        tag = db.query(Tag).filter(Tag.id == tid).first()
+        if not tag:
+            raise HTTPException(status_code=400, detail=f"Tag {tid} not found")
+        tags.append(tag)
+
+    for tag in tags:
+        existing = (
+            db.query(ActivityTag)
+            .filter(ActivityTag.activity_id == activity_id, ActivityTag.tag_id == tag.id)
+            .first()
+        )
+        if not existing:
+            db.add(ActivityTag(activity_id=activity_id, tag_id=tag.id))
+
+    db.commit()
+    db.refresh(entry)
+    return entry.tags
 
 
 @activity_tags_router.get("/{activity_id}/tags", response_model=list[TagResponse])

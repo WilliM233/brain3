@@ -32,6 +32,7 @@ from app.models import (
     SkillDomain,
     SkillProtocol,
 )
+from app.schemas.batch import BatchSkillCreate, BatchSkillCreateResponse
 from app.schemas.directives import DirectiveResponse
 from app.schemas.domains import DomainResponse
 from app.schemas.protocols import ProtocolResponse
@@ -70,6 +71,109 @@ def _load_skill_with_relations(db: Session, skill_id: UUID) -> Skill | None:
 # ---------------------------------------------------------------------------
 # Skill CRUD — /api/skills
 # ---------------------------------------------------------------------------
+
+
+@router.post("/batch", response_model=BatchSkillCreateResponse, status_code=status.HTTP_201_CREATED)
+def batch_create_skills(
+    payload: BatchSkillCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create skills. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            # Unique name check
+            existing = db.query(Skill).filter(Skill.name == item.name).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Batch item {idx}: Skill name already exists"
+                    f" ({item.name})",
+                )
+
+            # is_default constraint
+            if item.is_default:
+                current_default = (
+                    db.query(Skill).filter(Skill.is_default.is_(True)).first()
+                )
+                if current_default:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Another skill is"
+                        " already the default",
+                    )
+
+            # Validate artifact_id
+            if item.artifact_id is not None:
+                if not db.query(Artifact).filter(Artifact.id == item.artifact_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Artifact not found"
+                        f" (artifact_id: {item.artifact_id})",
+                    )
+
+            # Validate domain_ids
+            domains = []
+            if item.domain_ids:
+                for did in item.domain_ids:
+                    domain = db.query(Domain).filter(Domain.id == did).first()
+                    if not domain:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Domain {did} not found",
+                        )
+                    domains.append(domain)
+
+            # Validate protocol_ids
+            protocols = []
+            if item.protocol_ids:
+                for pid in item.protocol_ids:
+                    protocol = db.query(Protocol).filter(Protocol.id == pid).first()
+                    if not protocol:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Protocol {pid} not found",
+                        )
+                    protocols.append(protocol)
+
+            # Validate directive_ids
+            directives = []
+            if item.directive_ids:
+                for did in item.directive_ids:
+                    directive = db.query(Directive).filter(Directive.id == did).first()
+                    if not directive:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Batch item {idx}: Directive {did} not found",
+                        )
+                    directives.append(directive)
+
+            skill = Skill(
+                **item.model_dump(
+                    exclude={"domain_ids", "protocol_ids", "directive_ids"},
+                ),
+            )
+            db.add(skill)
+            db.flush()
+
+            for domain in domains:
+                db.add(SkillDomain(skill_id=skill.id, domain_id=domain.id))
+            for protocol in protocols:
+                db.add(SkillProtocol(skill_id=skill.id, protocol_id=protocol.id))
+            for directive in directives:
+                db.add(SkillDirective(skill_id=skill.id, directive_id=directive.id))
+
+            created.append(skill)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+
+    # Reload with relations for response
+    results = []
+    for skill in created:
+        results.append(_load_skill_with_relations(db, skill.id))
+    return {"created": results, "count": len(results)}
 
 
 @router.post("/", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)

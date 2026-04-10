@@ -1,0 +1,42 @@
+{
+  "items": [
+    {
+      "name": "session-startup",
+      "description": "Standard procedure for beginning a new BRAIN session",
+      "steps": [
+        {
+          "order": 1,
+          "title": "Load skill context",
+          "instruction": "Call get_skill_full for the active skill to load protocols, directives, and domain context",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Check pending tasks",
+          "instruction": "List tasks with status=active or status=pending to identify current work",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    },
+    {
+      "name": "bug-discovery",
+      "description": "Steps for handling bugs found during other work — log it, don't fix it",
+      "steps": [
+        {
+          "order": 1,
+          "title": "File GitHub issue",
+          "instruction": "Create a GitHub issue with type, ticket context, description, severity, and suggested fix",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Assess severity",
+          "instruction": "Classify as Blocker, Major, Minor, or Cosmetic. Flag blockers to L immediately",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    }
+  ]
+}

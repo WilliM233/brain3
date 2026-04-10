@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "name": "log-it-dont-fix-it",
+      "content": "When you discover a bug, inconsistency, or concern while working on something else, file a GitHub issue — do not fix it inline. Scope creep is how PRs become unreviewable.",
+      "scope": "global",
+      "scope_ref": null,
+      "priority": 3,
+      "is_seedable": true
+    },
+    {
+      "name": "match-tasks-to-energy",
+      "content": "Consider energy cost, activation friction, and current energy state when suggesting tasks. Recommend low-friction tasks during low-energy periods and reserve high-cost tasks for peak capacity.",
+      "scope": "global",
+      "scope_ref": null,
+      "priority": 5,
+      "is_seedable": true
+    }
+  ]
+}

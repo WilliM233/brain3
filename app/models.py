@@ -94,6 +94,19 @@ class ProtocolTag(Base):
     )
 
 
+class DirectiveTag(Base):
+    """Many-to-many link between directives and tags."""
+
+    __tablename__ = "directive_tags"
+
+    directive_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pillar 1: Domains
 # ---------------------------------------------------------------------------
@@ -298,6 +311,9 @@ class Tag(Base):
     )
     protocols: Mapped[list["Protocol"]] = relationship(
         secondary="protocol_tags", back_populates="tags",
+    )
+    directives: Mapped[list["Directive"]] = relationship(
+        secondary="directive_tags", back_populates="tags",
     )
 
 
@@ -583,3 +599,47 @@ class Protocol(Base):
         secondary="protocol_tags", back_populates="protocols",
     )
     artifact: Mapped["Artifact | None"] = relationship(back_populates="protocols")
+
+
+# ---------------------------------------------------------------------------
+# Directives — principles and guardrails
+# ---------------------------------------------------------------------------
+
+class Directive(Base):
+    """Declarative rule or guardrail with scope-based resolution."""
+
+    __tablename__ = "directives"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String, nullable=False)
+    scope_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope IN ('global', 'skill', 'agent')",
+            name="ck_directives_scope",
+        ),
+        CheckConstraint(
+            "priority BETWEEN 1 AND 10",
+            name="ck_directives_priority",
+        ),
+        Index("ix_directives_scope", "scope"),
+        Index("ix_directives_priority", "priority"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="directive_tags", back_populates="directives",
+    )

@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.routers import (
     activity,
+    artifacts,
     checkins,
     domains,
     goals,
@@ -79,4 +80,8 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(tags.task_tags_router, prefix="/api/tasks", tags=["Task Tags"])
 app.include_router(
     activity.activity_tags_router, prefix="/api/activity", tags=["Activity Tags"],
+)
+app.include_router(artifacts.router, prefix="/api/artifacts", tags=["Artifacts"])
+app.include_router(
+    artifacts.artifact_tags_router, prefix="/api/artifacts", tags=["Artifact Tags"],
 )

@@ -21,6 +21,7 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -60,6 +61,19 @@ class ActivityTag(Base):
 
     activity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("activity_log.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class ArtifactTag(Base):
+    """Many-to-many link between artifacts and tags."""
+
+    __tablename__ = "artifact_tags"
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
@@ -265,6 +279,9 @@ class Tag(Base):
     activity_logs: Mapped[list["ActivityLog"]] = relationship(
         secondary="activity_tags", back_populates="tags",
     )
+    artifacts: Mapped[list["Artifact"]] = relationship(
+        secondary="artifact_tags", back_populates="tags",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -454,4 +471,59 @@ class ActivityLog(Base):
     checkin: Mapped["StateCheckin | None"] = relationship(back_populates="activity_logs")
     tags: Mapped[list["Tag"]] = relationship(
         secondary="activity_tags", back_populates="activity_logs",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Artifacts — living reference documents
+# ---------------------------------------------------------------------------
+
+class Artifact(Base):
+    """Stored document with versioning, multi-part grouping, and tagging."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str | None] = mapped_column(Text)
+    content_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_type IN ("
+            "'document', 'protocol', 'brief', 'prompt', 'template', 'journal', 'spec'"
+            ")",
+            name="ck_artifacts_artifact_type",
+        ),
+        CheckConstraint(
+            "octet_length(content) <= 524288",
+            name="ck_artifacts_content_size",
+        ),
+        Index("ix_artifacts_artifact_type", "artifact_type"),
+        Index("ix_artifacts_is_seedable", "is_seedable"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="artifact_tags", back_populates="artifacts",
+    )
+    parent: Mapped["Artifact | None"] = relationship(
+        remote_side=[id], foreign_keys=[parent_id],
+    )
+    children: Mapped[list["Artifact"]] = relationship(
+        foreign_keys=[parent_id], overlaps="parent",
     )

@@ -26,3 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Task CRUD endpoints with composable ADHD-aware filters (#5)
 - Task filters: energy cost range, friction range, cognitive type, context, due dates, overdue, standalone (#5)
 - Pydantic validators for 1-5 scale fields (energy_cost, activation_friction) (#5)
+- Content migration script (`scripts/migrate_to_artifacts.py`) with --dry-run, --tag, and --api-url flags (#99)
+- Seed data loading script (`scripts/seed_data.py`) with idempotent batch loading, --only and --dry-run flags (#99)
+- Seed data files in `scripts/seeds/` — minimal starter protocols, directives, and skills (#99)
+- Seed data validation tests covering JSON parsing, schema compliance, cross-references, and script logic (#99)

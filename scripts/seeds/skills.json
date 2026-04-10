@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "name": "core-protocol",
+      "description": "Always-active base skill providing session management and standard operating procedures",
+      "is_seedable": true,
+      "is_default": true,
+      "protocol_names": ["session-startup", "bug-discovery"],
+      "directive_names": ["log-it-dont-fix-it"]
+    },
+    {
+      "name": "wellness",
+      "description": "Health and energy management mode — tracks energy patterns and suggests restorative actions",
+      "is_seedable": true,
+      "is_default": false,
+      "protocol_names": [],
+      "directive_names": ["match-tasks-to-energy"]
+    }
+  ]
+}

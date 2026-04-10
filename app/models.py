@@ -21,6 +21,7 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Date,
@@ -74,6 +75,19 @@ class ArtifactTag(Base):
 
     artifact_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class ProtocolTag(Base):
+    """Many-to-many link between protocols and tags."""
+
+    __tablename__ = "protocol_tags"
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
@@ -281,6 +295,9 @@ class Tag(Base):
     )
     artifacts: Mapped[list["Artifact"]] = relationship(
         secondary="artifact_tags", back_populates="tags",
+    )
+    protocols: Mapped[list["Protocol"]] = relationship(
+        secondary="protocol_tags", back_populates="tags",
     )
 
 
@@ -527,3 +544,42 @@ class Artifact(Base):
     children: Mapped[list["Artifact"]] = relationship(
         foreign_keys=[parent_id], overlaps="parent",
     )
+    protocols: Mapped[list["Protocol"]] = relationship(back_populates="artifact")
+
+
+# ---------------------------------------------------------------------------
+# Protocols — step-by-step procedures
+# ---------------------------------------------------------------------------
+
+class Protocol(Base):
+    """Repeatable behavioral pattern with ordered steps (JSONB)."""
+
+    __tablename__ = "protocols"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[dict | None] = mapped_column(JSON)
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_protocols_is_seedable", "is_seedable"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="protocol_tags", back_populates="protocols",
+    )
+    artifact: Mapped["Artifact | None"] = relationship(back_populates="protocols")

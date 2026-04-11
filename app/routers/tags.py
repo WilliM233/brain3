@@ -22,8 +22,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ActivityLog, Tag, Task, TaskTag
+from app.models import ActivityLog, Artifact, Directive, Protocol, Tag, Task, TaskTag
 from app.schemas.activity import ActivityLogResponse
+from app.schemas.artifacts import ArtifactResponse
+from app.schemas.batch import BatchTagAttachRequest
+from app.schemas.directives import DirectiveResponse
+from app.schemas.protocols import ProtocolResponse
 from app.schemas.tags import TagCreate, TagResponse, TagUpdate
 from app.schemas.tasks import TaskResponse
 
@@ -137,8 +141,90 @@ def list_activities_for_tag(
 
 
 # ---------------------------------------------------------------------------
+# Reverse lookup — /api/tags/{tag_id}/artifacts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tag_id}/artifacts", response_model=list[ArtifactResponse])
+def list_artifacts_for_tag(
+    tag_id: UUID, db: Session = Depends(get_db)
+) -> list[Artifact]:
+    """List all artifacts that have a given tag."""
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag.artifacts
+
+
+# ---------------------------------------------------------------------------
+# Reverse lookup — /api/tags/{tag_id}/protocols
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tag_id}/protocols", response_model=list[ProtocolResponse])
+def list_protocols_for_tag(
+    tag_id: UUID, db: Session = Depends(get_db)
+) -> list[Protocol]:
+    """List all protocols that have a given tag."""
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag.protocols
+
+
+# ---------------------------------------------------------------------------
+# Reverse lookup — /api/tags/{tag_id}/directives
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tag_id}/directives", response_model=list[DirectiveResponse])
+def list_directives_for_tag(
+    tag_id: UUID, db: Session = Depends(get_db)
+) -> list[Directive]:
+    """List all directives that have a given tag."""
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag.directives
+
+
+# ---------------------------------------------------------------------------
 # Task-Tag attachment — /api/tasks/{task_id}/tags
 # ---------------------------------------------------------------------------
+
+
+@task_tags_router.post(
+    "/{task_id}/tags/batch", response_model=list[TagResponse],
+)
+def batch_attach_tags_to_task(
+    task_id: UUID,
+    payload: BatchTagAttachRequest,
+    db: Session = Depends(get_db),
+) -> list[Tag]:
+    """Attach multiple tags to a task. Idempotent."""
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    tags = []
+    for tid in payload.tag_ids:
+        tag = db.query(Tag).filter(Tag.id == tid).first()
+        if not tag:
+            raise HTTPException(status_code=400, detail=f"Tag {tid} not found")
+        tags.append(tag)
+
+    for tag in tags:
+        existing = (
+            db.query(TaskTag)
+            .filter(TaskTag.task_id == task_id, TaskTag.tag_id == tag.id)
+            .first()
+        )
+        if not existing:
+            db.add(TaskTag(task_id=task_id, tag_id=tag.id))
+
+    db.commit()
+    db.refresh(task)
+    return task.tags
 
 
 @task_tags_router.get("/{task_id}/tags", response_model=list[TagResponse])

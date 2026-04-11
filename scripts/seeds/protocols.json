@@ -1,0 +1,129 @@
+{
+  "items": [
+    {
+      "name": "session-startup",
+      "description": "Standard procedure for beginning a new BRAIN session",
+      "steps": [
+        {
+          "order": 1,
+          "title": "Load skill context",
+          "instruction": "Call get_skill_full for the active skill to load protocols, directives, and domain context",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Check pending tasks",
+          "instruction": "List tasks with status=active or status=pending to identify current work",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    },
+    {
+      "name": "session-shutdown",
+      "description": "Standard procedure for ending a BRAIN session — capture context before it disappears",
+      "steps": [
+        {
+          "order": 1,
+          "title": "Log activity",
+          "instruction": "Create activity log entries for all work completed during this session, including duration and energy ratings",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Update task statuses",
+          "instruction": "Mark completed tasks as done, update in-progress tasks with current state, defer blocked tasks with notes",
+          "is_optional": false
+        },
+        {
+          "order": 3,
+          "title": "Write handoff notes",
+          "instruction": "Document anything the next session needs to know — decisions made, blockers hit, next steps planned",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    },
+    {
+      "name": "bug-discovery",
+      "description": "Steps for handling bugs found during other work — log it, don't fix it",
+      "steps": [
+        {
+          "order": 1,
+          "title": "File GitHub issue",
+          "instruction": "Create a GitHub issue with type, ticket context, description, severity, and suggested fix",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Assess severity",
+          "instruction": "Classify as Blocker, Major, Minor, or Cosmetic. Flag blockers to L immediately",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    },
+    {
+      "name": "agent-activation",
+      "description": "Steps for activating a Foundry agent — load identity and context before starting work",
+      "steps": [
+        {
+          "order": 1,
+          "title": "Pull CLAUDE.md",
+          "instruction": "Load the org-level and repo-specific CLAUDE.md from BRAIN artifacts tagged claude-md",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Load agent brief",
+          "instruction": "Read the agent's identity artifact and session brief to establish role and context",
+          "is_optional": false
+        },
+        {
+          "order": 3,
+          "title": "Verify identity",
+          "instruction": "Confirm agent identity pointer matches the BRAIN project record and acknowledge role boundaries",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    },
+    {
+      "name": "release-pipeline",
+      "description": "Steps for shipping a version — branch, test, PR, merge, deploy, verify",
+      "steps": [
+        {
+          "order": 1,
+          "title": "Create release branch",
+          "instruction": "Branch from develop with naming convention release/vX.Y.Z",
+          "is_optional": false
+        },
+        {
+          "order": 2,
+          "title": "Run full test suite",
+          "instruction": "Execute pytest with full coverage and ruff lint checks — all must pass",
+          "is_optional": false
+        },
+        {
+          "order": 3,
+          "title": "Open pull request",
+          "instruction": "Create PR from release branch to main with full PR template filled out",
+          "is_optional": false
+        },
+        {
+          "order": 4,
+          "title": "Merge and tag",
+          "instruction": "After approval, merge to main and create a git tag for the version",
+          "is_optional": false
+        },
+        {
+          "order": 5,
+          "title": "Deploy and verify",
+          "instruction": "Deploy to production and verify health checks pass, key endpoints respond correctly",
+          "is_optional": false
+        }
+      ],
+      "is_seedable": true
+    }
+  ]
+}

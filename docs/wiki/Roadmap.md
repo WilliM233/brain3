@@ -14,14 +14,43 @@ The data foundation and conversational interface. Claude has full read/write acc
 
 - **PostgreSQL database** on Docker with all seven pillar tables and relationships
 - **FastAPI REST API** with full CRUD, composable query filters, and four reporting endpoints
-- **Claude MCP integration** via [brain3-mcp](https://github.com/WilliM233/brain3-mcp) — 50+ tools covering all entities
+- **Claude MCP integration** via [brain3-mcp](https://github.com/WilliM233/brain3-mcp) — 57 tools covering all entities
 - **ADHD-aware task metadata** — energy cost, cognitive type, activation friction, context requirements
 - **Routine system** with streak tracking, flexible scheduling, and pattern break detection
 - **Activity logging** with subjective metadata (energy before/after, actual friction, mood)
 - **Reporting** — activity summaries, domain balance, routine adherence, friction analysis
 - **Production deployment** on TrueNAS with Docker Compose, automated migrations, nightly backups
-- **CI pipeline** — 283+ tests, Ruff lint, GitHub Actions
+- **CI pipeline** — 293 tests, Ruff lint, GitHub Actions
 - **Documentation** — README, developer setup, deployment guide, environment reference, wiki
+
+---
+
+## v1.1.0 — Activity Tags ✓
+
+**Status: Complete**
+
+Tagging on activity log entries. Mirrors the existing task tags pattern — `activity_tags` association table, tag/untag endpoints, tag filter on `list_activity`, and reverse lookup via `list_tagged_activities`.
+
+---
+
+## v1.2.0 — The Knowledge Layer ✓
+
+**Status: Complete** (April 2026)
+
+Persistent knowledge entities, batch API, and seed framework. The system gains memory that persists across sessions.
+
+### What's Delivered
+
+- **Artifacts** — versioned reference documents with content storage (512KB), parent/child hierarchy, tagging, and 7 type categories
+- **Protocols** — structured step-by-step procedures (JSON steps, max 50), linked to optional source artifacts, versioned on update
+- **Directives** — behavioral rules with scoped priority (global/skill/agent), priority 1-10, and directive resolution endpoint
+- **Skills** — named operating modes with many-to-many links to domains, protocols, and directives; `get_skill_full` bootstrap endpoint
+- **Batch API** — atomic bulk create for 6 entity types (tasks, activity, artifacts, protocols, directives, skills) and batch tag attachment for 3 entity types
+- **Seed framework** — idempotent JSON-based data loading with cross-reference resolution, CLI flags for dry-run and entity filtering
+- **Content migration** — script for migrating existing reference documents into the Artifacts entity
+- **Expanded tagging** — tags on artifacts, protocols, and directives with reverse lookups from tag to entity
+- **MCP coverage** — 109 tools (52 new) covering all new entities and batch operations
+- **Quality** — 621 tests passing, lint clean, CI green, QA and security reviews complete
 
 ### What's Not Here
 
@@ -46,7 +75,6 @@ The system transitions from responsive to proactive. Claude reaches out rather t
 - **Morning briefings** — daily summary of what's on deck, routine status, and relevant context
 - **Accountability nudges** — missed routine alerts, deadline warnings, neglected domain flags
 - **MCP composite tools** — higher-level operations that combine multiple API calls (e.g., "complete routine + log activity + check in" as a single tool)
-- **Modular MCP refactoring** — splitting the monolithic `server.py` into per-entity tool modules as composite tools justify the structure
 
 ### What This Changes
 
@@ -97,10 +125,10 @@ All of it. Phase 4+ items are ideas that emerged from the design process and rep
 ## How Phases Build on Each Other
 
 ```
-Phase 1:  Data + API + Claude conversation
-Phase 2:  + Scheduler + Notifications + Home Assistant
-Phase 3:  + Web UI + Auth + Visual reporting
-Phase 4+: + New domains + Voice + Calendar + Ambient
+Phase 1 (v1.0–1.2): Data + API + Knowledge layer + Claude conversation
+Phase 2:            + Scheduler + Notifications + Home Assistant
+Phase 3:            + Web UI + Auth + Visual reporting
+Phase 4+:           + New domains + Voice + Calendar + Ambient
 ```
 
-Each phase adds a capability layer without modifying the previous one. The API and data model from Phase 1 serve all future phases. The MCP contract from Phase 1 extends in Phase 2 with composite tools. The reporting from Phase 1 gets a visual representation in Phase 3.
+Each phase adds a capability layer without modifying the previous one. The API and data model from Phase 1 serve all future phases. The MCP contract extends in Phase 2 with composite tools. The reporting gets a visual representation in Phase 3.

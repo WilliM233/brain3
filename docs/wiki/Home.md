@@ -6,8 +6,8 @@ BRAIN 3.0 is a personal life management system designed to work with how an ADHD
 
 This is not a task manager. It's a system that has initiative, not just memory.
 
-**Version:** 1.0.0 (Phase 1 complete)
-**Status:** Core data loop — database, API, and MCP integration — is stable and deployed. 283+ tests passing, CI green, production running on TrueNAS.
+**Version:** 1.2.0
+**Status:** Core data loop plus knowledge layer — database, API, and MCP integration — stable and deployed. 621 tests passing, CI green, production running on TrueNAS.
 
 ---
 
@@ -15,11 +15,11 @@ This is not a task manager. It's a system that has initiative, not just memory.
 
 | Page | What's There |
 |------|-------------|
-| [Architecture](Architecture.md) | The seven pillars, how they relate, ADHD-specific design principles, and key design decisions |
-| [API Overview](API-Overview.md) | Endpoint groups, what each covers, query filters, reporting endpoints |
+| [Architecture](Architecture.md) | The seven pillars, knowledge layer, how they relate, ADHD-specific design principles, and key design decisions |
+| [API Overview](API-Overview.md) | Endpoint groups, what each covers, query filters, batch API, reporting endpoints |
 | [MCP Setup](MCP-Setup.md) | How to connect Claude to BRAIN 3.0 via the Model Context Protocol |
 | [Development Guide](Development-Guide.md) | Developer workflow, git conventions, PR process, testing |
-| [Roadmap](Roadmap.md) | Phase 1 (complete) through Phase 4+ (vision) — what's built, what's planned, what's speculative |
+| [Roadmap](Roadmap.md) | Release history through Phase 4+ (vision) — what's built, what's planned, what's speculative |
 
 ## Key Resources
 
@@ -34,7 +34,7 @@ This is not a task manager. It's a system that has initiative, not just memory.
 
 ## What's Not Here Yet
 
-Phase 1 delivers the core data loop: Claude can manage your goals, tasks, routines, and patterns through conversation. What's **not** in v1.0.0:
+v1.2.0 delivers the core data loop plus persistent knowledge: Claude can manage your goals, tasks, routines, patterns, reference documents, and operating contexts through conversation. What's **not** here yet:
 
 - No web UI (Phase 3)
 - No authentication — single-user system behind a firewall (Phase 3)

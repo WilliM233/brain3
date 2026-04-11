@@ -34,3 +34,6 @@ node_modules/
 # Testing
 .coverage
 .pytest_cache/
+
+# Developer onboarding — stored in BRAIN, not in repo
+CLAUDE.md

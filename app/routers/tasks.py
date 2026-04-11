@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models import Project, Task
+from app.schemas.batch import BatchTaskCreate, BatchTaskCreateResponse
 from app.schemas.tasks import (
     TaskCreate,
     TaskDetailResponse,
@@ -47,6 +48,37 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
     db.commit()
     db.refresh(task)
     return task
+
+
+@router.post("/batch", response_model=BatchTaskCreateResponse, status_code=status.HTTP_201_CREATED)
+def batch_create_tasks(
+    payload: BatchTaskCreate, db: Session = Depends(get_db)
+) -> dict:
+    """Batch create tasks. Atomic — all succeed or all fail."""
+    created = []
+    try:
+        for idx, item in enumerate(payload.items):
+            if item.project_id is not None:
+                project = db.query(Project).filter(Project.id == item.project_id).first()
+                if not project:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Project not found"
+                    f" (project_id: {item.project_id})",
+                    )
+
+            task = Task(**item.model_dump())
+            db.add(task)
+            db.flush()
+            created.append(task)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    db.commit()
+    for task in created:
+        db.refresh(task)
+    return {"created": created, "count": len(created)}
 
 
 @router.get("/", response_model=list[TaskResponse])

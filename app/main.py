@@ -25,12 +25,16 @@ from app.config import settings
 from app.database import SessionLocal
 from app.routers import (
     activity,
+    artifacts,
     checkins,
+    directives,
     domains,
     goals,
     projects,
+    protocols,
     reports,
     routines,
+    skills,
     tags,
     tasks,
 )
@@ -79,4 +83,26 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(tags.task_tags_router, prefix="/api/tasks", tags=["Task Tags"])
 app.include_router(
     activity.activity_tags_router, prefix="/api/activity", tags=["Activity Tags"],
+)
+app.include_router(artifacts.router, prefix="/api/artifacts", tags=["Artifacts"])
+app.include_router(
+    artifacts.artifact_tags_router, prefix="/api/artifacts", tags=["Artifact Tags"],
+)
+app.include_router(protocols.router, prefix="/api/protocols", tags=["Protocols"])
+app.include_router(
+    protocols.protocol_tags_router, prefix="/api/protocols", tags=["Protocol Tags"],
+)
+app.include_router(directives.router, prefix="/api/directives", tags=["Directives"])
+app.include_router(
+    directives.directive_tags_router, prefix="/api/directives", tags=["Directive Tags"],
+)
+app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
+app.include_router(
+    skills.skill_domains_router, prefix="/api/skills", tags=["Skill Domains"],
+)
+app.include_router(
+    skills.skill_protocols_router, prefix="/api/skills", tags=["Skill Protocols"],
+)
+app.include_router(
+    skills.skill_directives_router, prefix="/api/skills", tags=["Skill Directives"],
 )

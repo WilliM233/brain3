@@ -21,6 +21,8 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -30,7 +32,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -66,6 +68,88 @@ class ActivityTag(Base):
     )
 
 
+class ArtifactTag(Base):
+    """Many-to-many link between artifacts and tags."""
+
+    __tablename__ = "artifact_tags"
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class ProtocolTag(Base):
+    """Many-to-many link between protocols and tags."""
+
+    __tablename__ = "protocol_tags"
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class DirectiveTag(Base):
+    """Many-to-many link between directives and tags."""
+
+    __tablename__ = "directive_tags"
+
+    directive_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Association tables: skill relationships
+# ---------------------------------------------------------------------------
+
+class SkillDomain(Base):
+    """Many-to-many link between skills and domains."""
+
+    __tablename__ = "skill_domains"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class SkillProtocol(Base):
+    """Many-to-many link between skills and protocols."""
+
+    __tablename__ = "skill_protocols"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
+class SkillDirective(Base):
+    """Many-to-many link between skills and directives."""
+
+    __tablename__ = "skill_directives"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+    )
+    directive_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pillar 1: Domains
 # ---------------------------------------------------------------------------
@@ -92,6 +176,9 @@ class Domain(Base):
     )
     routines: Mapped[list["Routine"]] = relationship(
         back_populates="domain", cascade="all, delete-orphan",
+    )
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_domains", back_populates="domains",
     )
 
 
@@ -264,6 +351,15 @@ class Tag(Base):
     )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(
         secondary="activity_tags", back_populates="tags",
+    )
+    artifacts: Mapped[list["Artifact"]] = relationship(
+        secondary="artifact_tags", back_populates="tags",
+    )
+    protocols: Mapped[list["Protocol"]] = relationship(
+        secondary="protocol_tags", back_populates="tags",
+    )
+    directives: Mapped[list["Directive"]] = relationship(
+        secondary="directive_tags", back_populates="tags",
     )
 
 
@@ -455,3 +551,193 @@ class ActivityLog(Base):
     tags: Mapped[list["Tag"]] = relationship(
         secondary="activity_tags", back_populates="activity_logs",
     )
+
+
+# ---------------------------------------------------------------------------
+# Artifacts — living reference documents
+# ---------------------------------------------------------------------------
+
+class Artifact(Base):
+    """Stored document with versioning, multi-part grouping, and tagging."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str | None] = mapped_column(Text)
+    content_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_type IN ("
+            "'document', 'protocol', 'brief', 'prompt', 'template', 'journal', 'spec'"
+            ")",
+            name="ck_artifacts_artifact_type",
+        ),
+        CheckConstraint(
+            "octet_length(content) <= 524288",
+            name="ck_artifacts_content_size",
+        ),
+        Index("ix_artifacts_artifact_type", "artifact_type"),
+        Index("ix_artifacts_is_seedable", "is_seedable"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="artifact_tags", back_populates="artifacts",
+    )
+    parent: Mapped["Artifact | None"] = relationship(
+        remote_side=[id], foreign_keys=[parent_id],
+    )
+    children: Mapped[list["Artifact"]] = relationship(
+        foreign_keys=[parent_id], overlaps="parent",
+    )
+    protocols: Mapped[list["Protocol"]] = relationship(back_populates="artifact")
+    skills: Mapped[list["Skill"]] = relationship(back_populates="artifact")
+
+
+# ---------------------------------------------------------------------------
+# Protocols — step-by-step procedures
+# ---------------------------------------------------------------------------
+
+class Protocol(Base):
+    """Repeatable behavioral pattern with ordered steps (JSONB)."""
+
+    __tablename__ = "protocols"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_protocols_is_seedable", "is_seedable"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="protocol_tags", back_populates="protocols",
+    )
+    artifact: Mapped["Artifact | None"] = relationship(back_populates="protocols")
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_protocols", back_populates="protocols",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Directives — principles and guardrails
+# ---------------------------------------------------------------------------
+
+class Directive(Base):
+    """Declarative rule or guardrail with scope-based resolution."""
+
+    __tablename__ = "directives"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String, nullable=False)
+    scope_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope IN ('global', 'skill', 'agent')",
+            name="ck_directives_scope",
+        ),
+        CheckConstraint(
+            "priority BETWEEN 1 AND 10",
+            name="ck_directives_priority",
+        ),
+        Index("ix_directives_scope", "scope"),
+        Index("ix_directives_priority", "priority"),
+    )
+
+    # Relationships
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary="directive_tags", back_populates="directives",
+    )
+    skills: Mapped[list["Skill"]] = relationship(
+        secondary="skill_directives", back_populates="directives",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Skills — contextual operating modes
+# ---------------------------------------------------------------------------
+
+class Skill(Base):
+    """Contextual mode that composes protocols, directives, and domains."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    adhd_patterns: Mapped[str | None] = mapped_column(Text)
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+    )
+    is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_skills_is_seedable", "is_seedable"),
+        Index("ix_skills_is_default", "is_default"),
+    )
+
+    # Relationships
+    domains: Mapped[list["Domain"]] = relationship(
+        secondary="skill_domains", back_populates="skills",
+    )
+    protocols: Mapped[list["Protocol"]] = relationship(
+        secondary="skill_protocols", back_populates="skills",
+    )
+    directives: Mapped[list["Directive"]] = relationship(
+        secondary="skill_directives", back_populates="skills",
+    )
+    artifact: Mapped["Artifact | None"] = relationship(back_populates="skills")

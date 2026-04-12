@@ -203,4 +203,12 @@ def make_skill(client: TestClient, **overrides) -> dict:
     return resp.json()
 
 
+def make_habit(client: TestClient, **overrides) -> dict:
+    """Create a habit via the API and return the response JSON."""
+    data = {"title": "Test Habit", "frequency": "daily", **overrides}
+    resp = client.post("/api/habits", json=data)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 FAKE_UUID = str(uuid.uuid4())

@@ -119,6 +119,32 @@ class HabitDetailResponse(HabitResponse):
     routine: RoutineResponse | None = None
 
 
+# ---------------------------------------------------------------------------
+# Habit Completion — POST /api/habits/{id}/complete
+# ---------------------------------------------------------------------------
+
+
+class HabitCompleteRequest(BaseModel):
+    """Optional payload for habit completion."""
+
+    completed_date: date | None = None
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class HabitCompleteResponse(BaseModel):
+    """Response from completing a habit."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    habit_id: UUID
+    completion_id: UUID
+    completed_date: date
+    current_streak: int
+    best_streak: int
+    streak_was_broken: bool
+    source: str
+
+
 from app.schemas.routines import RoutineResponse  # noqa: E402
 
 HabitDetailResponse.model_rebuild()

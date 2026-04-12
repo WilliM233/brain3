@@ -395,3 +395,147 @@ class TestDeleteHabit:
     def test_delete_habit_not_found(self, client):
         resp = client.delete(f"/api/habits/{FAKE_UUID}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /api/habits/{id}/complete
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteHabit:
+
+    def test_complete_standalone_habit(self, client):
+        """Happy path — complete a standalone daily habit."""
+        habit = make_habit(client, frequency="daily")
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["habit_id"] == habit["id"]
+        assert data["completion_id"] is not None
+        assert data["current_streak"] == 1
+        assert data["best_streak"] == 1
+        assert data["streak_was_broken"] is False
+        assert data["source"] == "individual"
+
+    def test_complete_routine_linked_habit_no_cascade(self, client):
+        """Completing a routine-linked habit does NOT complete the routine."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"], frequency="daily")
+        habit = make_habit(client, routine_id=routine["id"], frequency=None)
+
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current_streak"] == 1
+
+        # Routine streak should be untouched
+        routine_resp = client.get(f"/api/routines/{routine['id']}")
+        assert routine_resp.json()["current_streak"] == 0
+
+    def test_complete_habit_frequency_fallback_to_routine(self, client):
+        """Habit without own frequency resolves from parent routine."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"], frequency="weekly")
+        habit = make_habit(client, routine_id=routine["id"], frequency=None)
+
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 200
+        assert resp.json()["current_streak"] == 1
+
+    def test_complete_with_backdating(self, client):
+        """Backdating via completed_date field works."""
+        habit = make_habit(client, frequency="daily")
+        resp = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-01"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["completed_date"] == "2026-04-01"
+
+    def test_complete_with_notes(self, client):
+        """Notes field is accepted and stored."""
+        habit = make_habit(client, frequency="daily")
+        resp = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"notes": "Felt great today!"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["completion_id"] is not None
+
+    def test_complete_idempotent_same_day(self, client):
+        """Same habit + same date returns existing record, no duplicate."""
+        habit = make_habit(client, frequency="daily")
+        resp1 = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-10"},
+        )
+        resp2 = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-10"},
+        )
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        assert resp1.json()["completion_id"] == resp2.json()["completion_id"]
+
+    def test_complete_paused_habit_rejected(self, client):
+        """Paused habits cannot be completed."""
+        habit = make_habit(client, frequency="daily")
+        client.patch(f"/api/habits/{habit['id']}", json={"status": "paused"})
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 400
+        assert "paused" in resp.json()["detail"]
+
+    def test_complete_graduated_habit_rejected(self, client):
+        """Graduated habits cannot be completed."""
+        habit = make_habit(client, frequency="daily")
+        client.patch(f"/api/habits/{habit['id']}", json={"status": "graduated"})
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 400
+        assert "graduated" in resp.json()["detail"]
+
+    def test_complete_abandoned_habit_rejected(self, client):
+        """Abandoned habits cannot be completed."""
+        habit = make_habit(client, frequency="daily")
+        client.patch(f"/api/habits/{habit['id']}", json={"status": "abandoned"})
+        resp = client.post(f"/api/habits/{habit['id']}/complete")
+        assert resp.status_code == 400
+        assert "abandoned" in resp.json()["detail"]
+
+    def test_complete_not_found(self, client):
+        """404 for invalid habit UUID."""
+        resp = client.post(f"/api/habits/{FAKE_UUID}/complete")
+        assert resp.status_code == 404
+
+    def test_streak_builds_consecutively(self, client):
+        """Streak increments on consecutive daily completions."""
+        habit = make_habit(client, frequency="daily")
+        client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-10"},
+        )
+        resp = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-11"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current_streak"] == 2
+        assert data["best_streak"] == 2
+        assert data["streak_was_broken"] is False
+
+    def test_streak_breaks_on_gap(self, client):
+        """Streak resets when gap exceeds frequency tolerance."""
+        habit = make_habit(client, frequency="daily")
+        client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-10"},
+        )
+        resp = client.post(
+            f"/api/habits/{habit['id']}/complete",
+            json={"completed_date": "2026-04-13"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current_streak"] == 1
+        assert data["best_streak"] == 1
+        assert data["streak_was_broken"] is True

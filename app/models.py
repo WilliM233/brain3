@@ -29,12 +29,13 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 from app.database import Base
 
@@ -419,6 +420,9 @@ class Routine(Base):
     schedules: Mapped[list["RoutineSchedule"]] = relationship(
         back_populates="routine", cascade="all, delete-orphan",
     )
+    habits: Mapped[list["Habit"]] = relationship(
+        back_populates="routine", cascade="all, delete-orphan",
+    )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="routine")
 
 
@@ -439,6 +443,80 @@ class RoutineSchedule(Base):
 
     # Relationships
     routine: Mapped["Routine"] = relationship(back_populates="schedules")
+
+
+# ---------------------------------------------------------------------------
+# Habits — atomic behavioral units (standalone or under a routine)
+# ---------------------------------------------------------------------------
+
+class Habit(Base):
+    """Atomic behavioral unit that can exist standalone or nested under a routine."""
+
+    __tablename__ = "habits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    routine_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="CASCADE"),
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="active",
+    )
+    frequency: Mapped[str | None] = mapped_column(String)
+    notification_frequency: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="none",
+    )
+    scaffolding_status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="tracking",
+    )
+    introduced_at: Mapped[date | None] = mapped_column(Date)
+    graduation_window: Mapped[int | None] = mapped_column(Integer, default=30)
+    graduation_target: Mapped[float | None] = mapped_column(
+        Numeric(precision=3, scale=2), default=0.85,
+    )
+    graduation_threshold: Mapped[int | None] = mapped_column(Integer, default=30)
+    current_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"),
+    )
+    best_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"),
+    )
+    last_completed: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'graduated', 'abandoned')",
+            name="ck_habits_status",
+        ),
+        CheckConstraint(
+            "frequency IN ('daily', 'weekdays', 'weekends', 'weekly', 'custom') "
+            "OR frequency IS NULL",
+            name="ck_habits_frequency",
+        ),
+        CheckConstraint(
+            "notification_frequency IN ("
+            "'daily', 'every_other_day', 'twice_week', 'weekly', 'graduated', 'none')",
+            name="ck_habits_notification_frequency",
+        ),
+        CheckConstraint(
+            "scaffolding_status IN ('tracking', 'accountable', 'graduated')",
+            name="ck_habits_scaffolding_status",
+        ),
+        Index("ix_habits_status", "status"),
+        Index("ix_habits_routine_id", "routine_id"),
+    )
+
+    # Relationships
+    routine: Mapped["Routine | None"] = relationship(back_populates="habits")
 
 
 # ---------------------------------------------------------------------------

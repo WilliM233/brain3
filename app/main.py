@@ -30,6 +30,7 @@ from app.routers import (
     directives,
     domains,
     goals,
+    habits,
     projects,
     protocols,
     reports,
@@ -77,6 +78,7 @@ app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(tags.router, prefix="/api/tags", tags=["Tags"])
 app.include_router(routines.router, prefix="/api/routines", tags=["Routines"])
+app.include_router(habits.router, prefix="/api/habits", tags=["Habits"])
 app.include_router(checkins.router, prefix="/api/checkins", tags=["Check-ins"])
 app.include_router(activity.router, prefix="/api/activity", tags=["Activity Log"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])

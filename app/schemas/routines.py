@@ -131,10 +131,15 @@ RoutineDetailResponse.model_rebuild()
 # ---------------------------------------------------------------------------
 
 
+CompletionStatus = Literal["all_done", "partial", "skipped"]
+
+
 class RoutineCompleteRequest(BaseModel):
     """Optional payload for the completion endpoint."""
 
     completed_date: date | None = None
+    status: CompletionStatus = "all_done"
+    freeform_note: str | None = Field(default=None, max_length=5000)
 
 
 class RoutineCompleteResponse(BaseModel):
@@ -145,3 +150,6 @@ class RoutineCompleteResponse(BaseModel):
     current_streak: int
     best_streak: int
     streak_was_broken: bool
+    completion_id: UUID | None = None
+    status: str | None = None
+    habits_completed: list[UUID] | None = None

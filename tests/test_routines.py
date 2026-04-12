@@ -17,8 +17,9 @@
 """Tests for Routine CRUD, schedule management, and completion endpoints."""
 
 from datetime import date, timedelta
+from uuid import UUID
 
-from tests.conftest import FAKE_UUID, make_domain, make_routine
+from tests.conftest import FAKE_UUID, make_domain, make_habit, make_routine
 
 # ---------------------------------------------------------------------------
 # POST /api/routines
@@ -482,3 +483,326 @@ class TestScheduleManagement:
             f"/api/routines/{routine['id']}/schedules/{FAKE_UUID}"
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Scripted routine completion (routine with child habits)
+# ---------------------------------------------------------------------------
+
+class TestScriptedRoutineCompletion:
+    """Tests for routines that have child habits — the new scripted path."""
+
+    def _make_scripted_routine(self, client):
+        """Create a routine with two active child habits."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        h1 = make_habit(client, routine_id=routine["id"], title="Habit A")
+        h2 = make_habit(client, routine_id=routine["id"], title="Habit B")
+        return routine, h1, h2
+
+    # -- all_done -----------------------------------------------------------
+
+    def test_all_done_cascades_to_habits(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "all_done"
+        assert body["completion_id"] is not None
+        assert set(body["habits_completed"]) == {h1["id"], h2["id"]}
+        assert body["current_streak"] == 1
+        assert body["streak_was_broken"] is False
+
+    def test_all_done_habit_streaks_updated(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        )
+        # Verify habit streaks were updated
+        for hid in (h1["id"], h2["id"]):
+            resp = client.get(f"/api/habits/{hid}")
+            assert resp.json()["current_streak"] == 1
+            assert resp.json()["last_completed"] == date.today().isoformat()
+
+    def test_all_done_creates_habit_completions_with_cascade_source(self, client, db):
+        from app.models import HabitCompletion
+
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        )
+        completions = db.query(HabitCompletion).all()
+        assert len(completions) == 2
+        for c in completions:
+            assert c.source == "routine_cascade"
+
+    def test_all_done_creates_routine_completion_record(self, client, db):
+        from app.models import RoutineCompletion
+
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        )
+        body = resp.json()
+        rc = db.query(RoutineCompletion).filter(
+            RoutineCompletion.id == UUID(body["completion_id"])
+        ).first()
+        assert rc is not None
+        assert rc.status == "all_done"
+        assert rc.reconciled is True
+
+    def test_all_done_default_status(self, client):
+        """Calling complete with no status defaults to all_done."""
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["status"] == "all_done"
+        assert set(body["habits_completed"]) == {h1["id"], h2["id"]}
+
+    def test_all_done_skips_graduated_habits(self, client):
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        active = make_habit(client, routine_id=routine["id"], title="Active Habit")
+        graduated = make_habit(
+            client,
+            routine_id=routine["id"],
+            title="Graduated Habit",
+            scaffolding_status="graduated",
+        )
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["habits_completed"] == [active["id"]]
+        assert graduated["id"] not in body["habits_completed"]
+
+    def test_all_done_skips_non_active_habits(self, client):
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        active = make_habit(client, routine_id=routine["id"], title="Active Habit")
+        paused = make_habit(
+            client,
+            routine_id=routine["id"],
+            title="Paused Habit",
+            status="paused",
+        )
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["habits_completed"] == [active["id"]]
+        assert paused["id"] not in body["habits_completed"]
+
+    def test_all_done_mixed_active_and_graduated(self, client):
+        """Only active non-graduated habits get cascaded."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        h_active = make_habit(client, routine_id=routine["id"], title="A")
+        make_habit(
+            client, routine_id=routine["id"], title="G",
+            scaffolding_status="graduated",
+        )
+        make_habit(
+            client, routine_id=routine["id"], title="P",
+            status="paused",
+        )
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["habits_completed"] == [h_active["id"]]
+
+    # -- Idempotency --------------------------------------------------------
+
+    def test_all_done_idempotent_skips_already_completed_habit(self, client):
+        """If a habit was individually completed today, cascade skips it."""
+        routine, h1, h2 = self._make_scripted_routine(client)
+        # Complete h1 individually first
+        client.post(f"/api/habits/{h1['id']}/complete")
+        # Now cascade via routine
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        # Only h2 should be in the cascade list
+        assert body["habits_completed"] == [h2["id"]]
+
+    def test_all_done_idempotent_all_habits_already_completed(self, client):
+        """If all habits already completed today, cascade list is empty."""
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(f"/api/habits/{h1['id']}/complete")
+        client.post(f"/api/habits/{h2['id']}/complete")
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["habits_completed"] == []
+        # Routine streak should still be updated
+        assert body["current_streak"] == 1
+
+    # -- partial ------------------------------------------------------------
+
+    def test_partial_does_not_cascade(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "partial", "freeform_note": "Did 2 of 3 things"},
+        )
+        body = resp.json()
+        assert body["status"] == "partial"
+        assert body["habits_completed"] == []
+        # Routine still gets streak credit
+        assert body["current_streak"] == 1
+
+    def test_partial_stores_freeform_note(self, client, db):
+        from app.models import RoutineCompletion
+
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "partial", "freeform_note": "Only flossed"},
+        )
+        body = resp.json()
+        rc = db.query(RoutineCompletion).filter(
+            RoutineCompletion.id == UUID(body["completion_id"])
+        ).first()
+        assert rc.freeform_note == "Only flossed"
+        assert rc.reconciled is False
+
+    def test_partial_habits_untouched(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "partial"},
+        )
+        for hid in (h1["id"], h2["id"]):
+            resp = client.get(f"/api/habits/{hid}")
+            assert resp.json()["current_streak"] == 0
+            assert resp.json()["last_completed"] is None
+
+    # -- skipped ------------------------------------------------------------
+
+    def test_skipped_freezes_streak(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        # Build a streak first
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"completed_date": yesterday},
+        )
+        # Now skip today
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped"},
+        )
+        body = resp.json()
+        assert body["status"] == "skipped"
+        # Streak frozen at 1 — not incremented, not broken
+        assert body["current_streak"] == 1
+        assert body["streak_was_broken"] is False
+
+    def test_skipped_does_not_cascade(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped"},
+        )
+        body = resp.json()
+        assert body["habits_completed"] == []
+
+    def test_skipped_habits_untouched(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped"},
+        )
+        for hid in (h1["id"], h2["id"]):
+            resp = client.get(f"/api/habits/{hid}")
+            assert resp.json()["current_streak"] == 0
+
+    def test_skipped_reconciled_true(self, client, db):
+        from app.models import RoutineCompletion
+
+        routine, h1, h2 = self._make_scripted_routine(client)
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped"},
+        )
+        body = resp.json()
+        rc = db.query(RoutineCompletion).filter(
+            RoutineCompletion.id == UUID(body["completion_id"])
+        ).first()
+        assert rc.reconciled is True
+
+    def test_skipped_does_not_break_streak_on_subsequent_completion(self, client):
+        """Skip preserves the streak so the next real completion can continue."""
+        routine, h1, h2 = self._make_scripted_routine(client)
+        two_days_ago = (date.today() - timedelta(days=2)).isoformat()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        # Complete two days ago (streak = 1)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"completed_date": two_days_ago},
+        )
+        # Skip yesterday (streak frozen at 1)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped", "completed_date": yesterday},
+        )
+        # Complete today — gap from last *real* completion is 2 days,
+        # which breaks daily streak. But the skip yesterday means the
+        # last_completed still points to two_days_ago.
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        # Daily frequency: 2-day gap from two_days_ago to today breaks streak
+        assert body["current_streak"] == 1
+        assert body["streak_was_broken"] is True
+
+    # -- Freeform regression ------------------------------------------------
+
+    def test_freeform_routine_unchanged(self, client):
+        """Freeform routines (no habits) keep v1 behaviour, return None fields."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["completion_id"] is None
+        assert body["status"] is None
+        assert body["habits_completed"] is None
+        assert body["current_streak"] == 1
+
+    def test_freeform_accepts_status_but_ignores_it(self, client):
+        """Freeform routines ignore status — always take v1 path."""
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        resp = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "skipped"},
+        )
+        body = resp.json()
+        # Freeform path: status is ignored, streak still evaluated
+        assert body["completion_id"] is None
+        assert body["current_streak"] == 1
+
+    # -- Streak evaluation on scripted routines -----------------------------
+
+    def test_scripted_streak_continues(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"completed_date": yesterday},
+        )
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["current_streak"] == 2
+        assert body["streak_was_broken"] is False
+
+    def test_scripted_streak_breaks(self, client):
+        routine, h1, h2 = self._make_scripted_routine(client)
+        three_days_ago = (date.today() - timedelta(days=3)).isoformat()
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"completed_date": three_days_ago},
+        )
+        resp = client.post(f"/api/routines/{routine['id']}/complete")
+        body = resp.json()
+        assert body["current_streak"] == 1
+        assert body["streak_was_broken"] is True

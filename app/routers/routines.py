@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import Domain, Routine, RoutineSchedule
+from app.models import Domain, HabitCompletion, Routine, RoutineCompletion, RoutineSchedule
 from app.schemas.routines import (
     RoutineCompleteRequest,
     RoutineCompleteResponse,
@@ -138,10 +138,19 @@ def complete_routine(
     payload: RoutineCompleteRequest | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Record a routine completion and evaluate the streak."""
+    """Record a routine completion and evaluate the streak.
+
+    Freeform routines (no child habits) keep the original v1 behaviour.
+    Scripted routines branch on ``status``: *all_done* cascades completion
+    to active non-graduated child habits, *partial* logs a freeform note
+    for later reconciliation, and *skipped* freezes the streak.
+    """
     routine = (
         db.query(Routine)
-        .options(joinedload(Routine.schedules))
+        .options(
+            joinedload(Routine.schedules),
+            joinedload(Routine.habits),
+        )
         .filter(Routine.id == routine_id)
         .first()
     )
@@ -151,8 +160,13 @@ def complete_routine(
         raise HTTPException(status_code=409, detail="Cannot complete a non-active routine")
 
     completed_date = date.today()
-    if payload and payload.completed_date:
-        completed_date = payload.completed_date
+    completion_status = "all_done"
+    freeform_note = None
+    if payload:
+        if payload.completed_date:
+            completed_date = payload.completed_date
+        completion_status = payload.status
+        freeform_note = payload.freeform_note
 
     # Build scheduled_days list for custom frequency
     scheduled_days = None
@@ -163,31 +177,159 @@ def complete_routine(
             if s.day_of_week and s.day_of_week.lower() in DAY_MAP
         ]
 
-    result = evaluate_streak(
-        frequency=routine.frequency,
-        current_streak=routine.current_streak,
-        best_streak=routine.best_streak,
-        last_completed=routine.last_completed,
-        completed_date=completed_date,
-        scheduled_days=scheduled_days,
+    has_habits = len(routine.habits) > 0
+
+    # --- Freeform path (no child habits) — unchanged v1 behaviour ----------
+    if not has_habits:
+        result = evaluate_streak(
+            frequency=routine.frequency,
+            current_streak=routine.current_streak,
+            best_streak=routine.best_streak,
+            last_completed=routine.last_completed,
+            completed_date=completed_date,
+            scheduled_days=scheduled_days,
+        )
+        routine.current_streak = result.current_streak
+        routine.best_streak = result.best_streak
+        if routine.last_completed is None or completed_date >= routine.last_completed:
+            routine.last_completed = completed_date
+
+        db.commit()
+        db.refresh(routine)
+
+        return {
+            "routine_id": routine.id,
+            "completed_date": completed_date,
+            "current_streak": result.current_streak,
+            "best_streak": result.best_streak,
+            "streak_was_broken": result.streak_was_broken,
+            "completion_id": None,
+            "status": None,
+            "habits_completed": None,
+        }
+
+    # --- Scripted path (has child habits) ----------------------------------
+
+    habits_completed: list[UUID] = []
+
+    if completion_status == "skipped":
+        # Freeze streak — no evaluate, no last_completed update
+        streak_was_broken = False
+    else:
+        # Both all_done and partial get routine-level streak credit
+        result = evaluate_streak(
+            frequency=routine.frequency,
+            current_streak=routine.current_streak,
+            best_streak=routine.best_streak,
+            last_completed=routine.last_completed,
+            completed_date=completed_date,
+            scheduled_days=scheduled_days,
+        )
+        routine.current_streak = result.current_streak
+        routine.best_streak = result.best_streak
+        if routine.last_completed is None or completed_date >= routine.last_completed:
+            routine.last_completed = completed_date
+        streak_was_broken = result.streak_was_broken
+
+    # Cascade to child habits only on all_done
+    if completion_status == "all_done":
+        habits_completed = _cascade_habits(
+            routine=routine,
+            completed_date=completed_date,
+            scheduled_days=scheduled_days,
+            db=db,
+        )
+
+    # Create the RoutineCompletion record
+    completion = RoutineCompletion(
+        routine_id=routine.id,
+        completed_at=completed_date,
+        status=completion_status,
+        freeform_note=freeform_note,
+        reconciled=completion_status != "partial",
     )
-
-    routine.current_streak = result.current_streak
-    routine.best_streak = result.best_streak
-    # Only advance last_completed forward, never regress on backdate
-    if routine.last_completed is None or completed_date >= routine.last_completed:
-        routine.last_completed = completed_date
-
+    db.add(completion)
     db.commit()
-    db.refresh(routine)
+    db.refresh(completion)
 
     return {
         "routine_id": routine.id,
         "completed_date": completed_date,
-        "current_streak": result.current_streak,
-        "best_streak": result.best_streak,
-        "streak_was_broken": result.streak_was_broken,
+        "current_streak": routine.current_streak,
+        "best_streak": routine.best_streak,
+        "streak_was_broken": streak_was_broken,
+        "completion_id": completion.id,
+        "status": completion_status,
+        "habits_completed": habits_completed,
     }
+
+
+def _cascade_habits(
+    routine: Routine,
+    completed_date: date,
+    scheduled_days: list[int] | None,
+    db: Session,
+) -> list[UUID]:
+    """Cascade completion to all active, non-graduated child habits.
+
+    Respects idempotency: habits already completed for ``completed_date``
+    are silently skipped.  Returns the list of habit IDs that received a
+    new completion record.
+    """
+    completed_ids: list[UUID] = []
+
+    active_habits = [
+        h for h in routine.habits
+        if h.status == "active" and h.scaffolding_status != "graduated"
+    ]
+
+    for habit in active_habits:
+        # Idempotency — skip if already completed today
+        existing = (
+            db.query(HabitCompletion)
+            .filter(
+                HabitCompletion.habit_id == habit.id,
+                HabitCompletion.completed_at == completed_date,
+            )
+            .first()
+        )
+        if existing:
+            continue
+
+        # Resolve frequency: habit's own, then parent routine's
+        frequency = habit.frequency or routine.frequency
+
+        # Build per-habit scheduled_days for custom frequency
+        habit_scheduled_days = scheduled_days
+        if frequency == "custom" and habit.frequency and habit.frequency != routine.frequency:
+            # If the habit has its own custom frequency distinct from the
+            # routine, we'd need its own schedule — but habits inherit
+            # the routine's schedule, so reuse scheduled_days.
+            habit_scheduled_days = scheduled_days
+
+        result = evaluate_streak(
+            frequency=frequency,
+            current_streak=habit.current_streak,
+            best_streak=habit.best_streak,
+            last_completed=habit.last_completed,
+            completed_date=completed_date,
+            scheduled_days=habit_scheduled_days,
+        )
+
+        habit.current_streak = result.current_streak
+        habit.best_streak = result.best_streak
+        if habit.last_completed is None or completed_date >= habit.last_completed:
+            habit.last_completed = completed_date
+
+        completion = HabitCompletion(
+            habit_id=habit.id,
+            completed_at=completed_date,
+            source="routine_cascade",
+        )
+        db.add(completion)
+        completed_ids.append(habit.id)
+
+    return completed_ids
 
 
 # ---------------------------------------------------------------------------

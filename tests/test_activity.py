@@ -24,6 +24,7 @@ from tests.conftest import (
     make_activity,
     make_checkin,
     make_domain,
+    make_habit,
     make_routine,
     make_task,
 )
@@ -84,6 +85,15 @@ class TestCreateActivity:
         assert resp.status_code == 201
         assert resp.json()["checkin_id"] == checkin["id"]
 
+    def test_create_with_habit(self, client):
+        habit = make_habit(client)
+        resp = client.post(
+            "/api/activity",
+            json={"habit_id": habit["id"], "action_type": "completed"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["habit_id"] == habit["id"]
+
     def test_create_multiple_refs_rejected(self, client):
         task = make_task(client)
         domain = make_domain(client)
@@ -93,6 +103,32 @@ class TestCreateActivity:
             json={
                 "task_id": task["id"],
                 "routine_id": routine["id"],
+                "action_type": "completed",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_create_task_and_habit_rejected(self, client):
+        task = make_task(client)
+        habit = make_habit(client)
+        resp = client.post(
+            "/api/activity",
+            json={
+                "task_id": task["id"],
+                "habit_id": habit["id"],
+                "action_type": "completed",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_create_habit_and_checkin_rejected(self, client):
+        habit = make_habit(client)
+        checkin = make_checkin(client)
+        resp = client.post(
+            "/api/activity",
+            json={
+                "habit_id": habit["id"],
+                "checkin_id": checkin["id"],
                 "action_type": "completed",
             },
         )
@@ -116,6 +152,13 @@ class TestCreateActivity:
         resp = client.post(
             "/api/activity",
             json={"checkin_id": FAKE_UUID, "action_type": "checked_in"},
+        )
+        assert resp.status_code == 400
+
+    def test_create_invalid_habit_ref(self, client):
+        resp = client.post(
+            "/api/activity",
+            json={"habit_id": FAKE_UUID, "action_type": "completed"},
         )
         assert resp.status_code == 400
 
@@ -233,6 +276,43 @@ class TestListActivity:
         resp = client.get("/api/activity?has_routine=true")
         assert len(resp.json()) == 1
 
+    def test_filter_by_habit_id(self, client):
+        habit = make_habit(client)
+        make_activity(client, habit_id=habit["id"])
+        make_activity(client, action_type="reflected")
+        resp = client.get(f"/api/activity?habit_id={habit['id']}")
+        assert len(resp.json()) == 1
+
+    def test_filter_has_habit(self, client):
+        habit = make_habit(client)
+        make_activity(client, habit_id=habit["id"])
+        make_activity(client, action_type="reflected")
+        resp = client.get("/api/activity?has_habit=true")
+        assert len(resp.json()) == 1
+
+    def test_filter_has_habit_false(self, client):
+        habit = make_habit(client)
+        make_activity(client, habit_id=habit["id"])
+        make_activity(client, action_type="reflected")
+        resp = client.get("/api/activity?has_habit=false")
+        assert len(resp.json()) == 1
+        assert resp.json()[0]["habit_id"] is None
+
+    def test_filter_has_checkin(self, client):
+        checkin = make_checkin(client)
+        make_activity(client, checkin_id=checkin["id"], action_type="checked_in")
+        make_activity(client, action_type="reflected")
+        resp = client.get("/api/activity?has_checkin=true")
+        assert len(resp.json()) == 1
+
+    def test_filter_has_checkin_false(self, client):
+        checkin = make_checkin(client)
+        make_activity(client, checkin_id=checkin["id"], action_type="checked_in")
+        make_activity(client, action_type="reflected")
+        resp = client.get("/api/activity?has_checkin=false")
+        assert len(resp.json()) == 1
+        assert resp.json()[0]["checkin_id"] is None
+
     def test_reverse_chronological_order(self, client, db):
         early = ActivityLog(
             action_type="completed",
@@ -279,12 +359,23 @@ class TestGetActivity:
         resp = client.get(f"/api/activity/{entry['id']}")
         assert resp.json()["checkin"]["checkin_type"] == "morning"
 
+    def test_get_detail_with_habit(self, client):
+        habit = make_habit(client, title="Drink water")
+        entry = make_activity(client, habit_id=habit["id"])
+        resp = client.get(f"/api/activity/{entry['id']}")
+        body = resp.json()
+        assert body["habit"]["title"] == "Drink water"
+        assert body["task"] is None
+        assert body["routine"] is None
+        assert body["checkin"] is None
+
     def test_get_detail_standalone(self, client):
         entry = make_activity(client, action_type="reflected")
         resp = client.get(f"/api/activity/{entry['id']}")
         body = resp.json()
         assert body["task"] is None
         assert body["routine"] is None
+        assert body["habit"] is None
         assert body["checkin"] is None
 
     def test_get_not_found(self, client):
@@ -380,6 +471,37 @@ class TestUpdateActivity:
         )
         assert resp.status_code == 400
 
+    def test_patch_to_habit_ref(self, client):
+        """Clearing old ref and setting habit_id in the same PATCH is allowed."""
+        task = make_task(client)
+        habit = make_habit(client)
+        entry = make_activity(client, task_id=task["id"])
+        resp = client.patch(
+            f"/api/activity/{entry['id']}",
+            json={"task_id": None, "habit_id": habit["id"]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["task_id"] is None
+        assert body["habit_id"] == habit["id"]
+
+    def test_patch_habit_plus_existing_ref_rejected(self, client):
+        """Adding habit_id to an entry with an existing task_id is rejected."""
+        task = make_task(client)
+        habit = make_habit(client)
+        entry = make_activity(client, task_id=task["id"])
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"habit_id": habit["id"]},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_invalid_habit_ref(self, client):
+        entry = make_activity(client)
+        resp = client.patch(
+            f"/api/activity/{entry['id']}", json={"habit_id": FAKE_UUID},
+        )
+        assert resp.status_code == 400
+
     def test_patch_clear_ref_allowed(self, client):
         """Setting a ref to null should not trigger existence validation."""
         task = make_task(client)
@@ -452,3 +574,14 @@ class TestActivityReferenceIntegrity:
         resp = client.get(f"/api/activity/{entry['id']}")
         assert resp.status_code == 200
         assert resp.json()["checkin_id"] is None
+
+    def test_habit_deletion_nullifies_activity_reference(self, client):
+        """Deleting a habit sets activity_log.habit_id to NULL."""
+        habit = make_habit(client)
+        entry = make_activity(client, habit_id=habit["id"])
+
+        client.delete(f"/api/habits/{habit['id']}")
+
+        resp = client.get(f"/api/activity/{entry['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["habit_id"] is None

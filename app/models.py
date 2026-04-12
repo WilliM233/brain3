@@ -524,6 +524,7 @@ class Habit(Base):
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit", cascade="all, delete-orphan",
     )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="habit")
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +675,9 @@ class ActivityLog(Base):
     checkin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("state_checkins.id", ondelete="SET NULL"),
     )
+    habit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("habits.id", ondelete="SET NULL"),
+    )
     action_type: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     energy_before: Mapped[int | None] = mapped_column(Integer)
@@ -715,6 +719,7 @@ class ActivityLog(Base):
     task: Mapped["Task | None"] = relationship(back_populates="activity_logs")
     routine: Mapped["Routine | None"] = relationship(back_populates="activity_logs")
     checkin: Mapped["StateCheckin | None"] = relationship(back_populates="activity_logs")
+    habit: Mapped["Habit | None"] = relationship(back_populates="activity_logs")
     tags: Mapped[list["Tag"]] = relationship(
         secondary="activity_tags", back_populates="activity_logs",
     )

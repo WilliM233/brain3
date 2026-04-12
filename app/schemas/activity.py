@@ -29,11 +29,15 @@ ActionType = Literal[
 ]
 
 
+_REFERENCE_FIELDS = ["task_id", "routine_id", "habit_id", "checkin_id"]
+
+
 class ActivityLogCreate(BaseModel):
     """Fields required to create an activity log entry."""
 
     task_id: UUID | None = None
     routine_id: UUID | None = None
+    habit_id: UUID | None = None
     checkin_id: UUID | None = None
     action_type: ActionType
     notes: str | None = Field(default=None, max_length=5000)
@@ -54,9 +58,9 @@ class ActivityLogCreate(BaseModel):
 
     @model_validator(mode="after")
     def at_most_one_reference(self) -> "ActivityLogCreate":
-        refs = sum(v is not None for v in [self.task_id, self.routine_id, self.checkin_id])
+        refs = sum(getattr(self, f) is not None for f in _REFERENCE_FIELDS)
         if refs > 1:
-            msg = "At most one of task_id, routine_id, or checkin_id may be provided"
+            msg = "At most one of task_id, routine_id, habit_id, or checkin_id may be provided"
             raise ValueError(msg)
         return self
 
@@ -66,6 +70,7 @@ class ActivityLogUpdate(BaseModel):
 
     task_id: UUID | None = None
     routine_id: UUID | None = None
+    habit_id: UUID | None = None
     checkin_id: UUID | None = None
     action_type: ActionType | None = None
     notes: str | None = Field(default=None, max_length=5000)
@@ -92,6 +97,7 @@ class ActivityLogResponse(BaseModel):
     id: UUID
     task_id: UUID | None = None
     routine_id: UUID | None = None
+    habit_id: UUID | None = None
     checkin_id: UUID | None = None
     action_type: ActionType
     notes: str | None = None
@@ -105,14 +111,16 @@ class ActivityLogResponse(BaseModel):
 
 
 class ActivityLogDetailResponse(ActivityLogResponse):
-    """Activity log entry with resolved task/routine/checkin references."""
+    """Activity log entry with resolved task/routine/habit/checkin references."""
 
     task: "TaskResponse | None" = None
     routine: "RoutineResponse | None" = None
+    habit: "HabitResponse | None" = None
     checkin: "CheckinResponse | None" = None
 
 
 from app.schemas.checkins import CheckinResponse  # noqa: E402
+from app.schemas.habits import HabitResponse  # noqa: E402
 from app.schemas.routines import RoutineResponse  # noqa: E402
 from app.schemas.tags import TagResponse  # noqa: E402
 from app.schemas.tasks import TaskResponse  # noqa: E402

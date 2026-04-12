@@ -16,19 +16,23 @@
 
 """CRUD endpoints for Habits."""
 
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import Habit, Routine
+from app.models import Habit, HabitCompletion, Routine
 from app.schemas.habits import (
+    HabitCompleteRequest,
+    HabitCompleteResponse,
     HabitCreate,
     HabitDetailResponse,
     HabitResponse,
     HabitUpdate,
 )
+from app.services.streak import evaluate_streak
 
 router = APIRouter()
 
@@ -128,3 +132,121 @@ def delete_habit(habit_id: UUID, db: Session = Depends(get_db)) -> None:
 
     db.delete(habit)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Completion — /api/habits/{habit_id}/complete
+# ---------------------------------------------------------------------------
+
+DAY_MAP = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+
+@router.post("/{habit_id}/complete", response_model=HabitCompleteResponse)
+def complete_habit(
+    habit_id: UUID,
+    payload: HabitCompleteRequest | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Record a habit completion and evaluate the streak."""
+    habit = (
+        db.query(Habit)
+        .options(
+            joinedload(Habit.routine).joinedload(Routine.schedules),
+        )
+        .filter(Habit.id == habit_id)
+        .first()
+    )
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    if habit.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot complete a habit with status '{habit.status}'. "
+            "Only active habits can be completed.",
+        )
+
+    completed_date = date.today()
+    if payload and payload.completed_date:
+        completed_date = payload.completed_date
+
+    notes = payload.notes if payload else None
+
+    # Idempotency check — return existing completion if one exists for this date
+    existing = (
+        db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.completed_at == completed_date,
+        )
+        .first()
+    )
+    if existing:
+        return {
+            "habit_id": habit.id,
+            "completion_id": existing.id,
+            "completed_date": existing.completed_at,
+            "current_streak": habit.current_streak,
+            "best_streak": habit.best_streak,
+            "streak_was_broken": False,
+            "source": existing.source,
+        }
+
+    # Resolve frequency: habit's own, then parent routine's, then error
+    frequency = habit.frequency
+    if frequency is None and habit.routine:
+        frequency = habit.routine.frequency
+    if frequency is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot determine frequency for this habit. "
+            "Set frequency on the habit or assign it to a routine.",
+        )
+
+    # Build scheduled_days for custom frequency
+    scheduled_days = None
+    if frequency == "custom" and habit.routine:
+        scheduled_days = [
+            DAY_MAP[s.day_of_week.lower()]
+            for s in habit.routine.schedules
+            if s.day_of_week and s.day_of_week.lower() in DAY_MAP
+        ]
+
+    result = evaluate_streak(
+        frequency=frequency,
+        current_streak=habit.current_streak,
+        best_streak=habit.best_streak,
+        last_completed=habit.last_completed,
+        completed_date=completed_date,
+        scheduled_days=scheduled_days,
+    )
+
+    # Update streak fields on the habit
+    habit.current_streak = result.current_streak
+    habit.best_streak = result.best_streak
+    if habit.last_completed is None or completed_date >= habit.last_completed:
+        habit.last_completed = completed_date
+
+    # Create the completion record
+    completion = HabitCompletion(
+        habit_id=habit.id,
+        completed_at=completed_date,
+        source="individual",
+        notes=notes,
+    )
+    db.add(completion)
+    db.commit()
+    db.refresh(completion)
+
+    return {
+        "habit_id": habit.id,
+        "completion_id": completion.id,
+        "completed_date": completed_date,
+        "current_streak": result.current_streak,
+        "best_streak": result.best_streak,
+        "streak_was_broken": result.streak_was_broken,
+        "source": "individual",
+    }

@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import ActivityLog, ActivityTag, Routine, StateCheckin, Tag, Task
+from app.models import ActivityLog, ActivityTag, Habit, Routine, StateCheckin, Tag, Task
 from app.schemas.activity import (
     ActivityLogCreate,
     ActivityLogDetailResponse,
@@ -53,6 +53,9 @@ def create_activity(payload: ActivityLogCreate, db: Session = Depends(get_db)) -
     if payload.checkin_id is not None:
         if not db.query(StateCheckin).filter(StateCheckin.id == payload.checkin_id).first():
             raise HTTPException(status_code=400, detail="Check-in not found")
+    if payload.habit_id is not None:
+        if not db.query(Habit).filter(Habit.id == payload.habit_id).first():
+            raise HTTPException(status_code=400, detail="Habit not found")
 
     # Validate tag_ids if provided
     tags = []
@@ -107,6 +110,13 @@ def batch_create_activity(
                         detail=f"Batch item {idx}: Check-in not found"
                         f" (checkin_id: {item.checkin_id})",
                     )
+            if item.habit_id is not None:
+                if not db.query(Habit).filter(Habit.id == item.habit_id).first():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch item {idx}: Habit not found"
+                        f" (habit_id: {item.habit_id})",
+                    )
 
             tags = []
             if item.tag_ids:
@@ -142,10 +152,13 @@ def list_activity(
     action_type: str | None = Query(None),
     task_id: UUID | None = Query(None),
     routine_id: UUID | None = Query(None),
+    habit_id: UUID | None = Query(None),
     logged_after: datetime | None = Query(None),
     logged_before: datetime | None = Query(None),
     has_task: bool | None = Query(None),
     has_routine: bool | None = Query(None),
+    has_habit: bool | None = Query(None),
+    has_checkin: bool | None = Query(None),
     tag: str | None = Query(None, description="Comma-separated tag names (AND logic)"),
     db: Session = Depends(get_db),
 ) -> list[ActivityLog]:
@@ -158,6 +171,8 @@ def list_activity(
         query = query.filter(ActivityLog.task_id == task_id)
     if routine_id is not None:
         query = query.filter(ActivityLog.routine_id == routine_id)
+    if habit_id is not None:
+        query = query.filter(ActivityLog.habit_id == habit_id)
     if logged_after is not None:
         query = query.filter(ActivityLog.logged_at >= logged_after)
     if logged_before is not None:
@@ -170,6 +185,14 @@ def list_activity(
         query = query.filter(ActivityLog.routine_id.isnot(None))
     elif has_routine is False:
         query = query.filter(ActivityLog.routine_id.is_(None))
+    if has_habit is True:
+        query = query.filter(ActivityLog.habit_id.isnot(None))
+    elif has_habit is False:
+        query = query.filter(ActivityLog.habit_id.is_(None))
+    if has_checkin is True:
+        query = query.filter(ActivityLog.checkin_id.isnot(None))
+    elif has_checkin is False:
+        query = query.filter(ActivityLog.checkin_id.is_(None))
     if tag is not None:
         tag_names = [t.strip().lower() for t in tag.split(",") if t.strip()]
         for tag_name in tag_names:
@@ -182,12 +205,13 @@ def list_activity(
 
 @router.get("/{entry_id}", response_model=ActivityLogDetailResponse)
 def get_activity(entry_id: UUID, db: Session = Depends(get_db)) -> ActivityLog:
-    """Get a single activity log entry with resolved task/routine/checkin."""
+    """Get a single activity log entry with resolved task/routine/habit/checkin."""
     entry = (
         db.query(ActivityLog)
         .options(
             joinedload(ActivityLog.task),
             joinedload(ActivityLog.routine),
+            joinedload(ActivityLog.habit),
             joinedload(ActivityLog.checkin),
             joinedload(ActivityLog.tags),
         )
@@ -219,16 +243,22 @@ def update_activity(
     if updates.get("checkin_id") is not None:
         if not db.query(StateCheckin).filter(StateCheckin.id == updates["checkin_id"]).first():
             raise HTTPException(status_code=400, detail="Check-in not found")
+    if updates.get("habit_id") is not None:
+        if not db.query(Habit).filter(Habit.id == updates["habit_id"]).first():
+            raise HTTPException(status_code=400, detail="Habit not found")
 
     for field, value in updates.items():
         setattr(entry, field, value)
 
     # Enforce at-most-one-reference on the post-merge state
-    refs = sum(v is not None for v in [entry.task_id, entry.routine_id, entry.checkin_id])
+    refs = sum(
+        v is not None
+        for v in [entry.task_id, entry.routine_id, entry.habit_id, entry.checkin_id]
+    )
     if refs > 1:
         raise HTTPException(
             status_code=422,
-            detail="At most one of task_id, routine_id, or checkin_id may be set",
+            detail="At most one of task_id, routine_id, habit_id, or checkin_id may be set",
         )
 
     db.commit()

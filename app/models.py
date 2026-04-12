@@ -424,6 +424,9 @@ class Routine(Base):
     habits: Mapped[list["Habit"]] = relationship(
         back_populates="routine", cascade="all, delete-orphan",
     )
+    completions: Mapped[list["RoutineCompletion"]] = relationship(
+        back_populates="routine", cascade="all, delete-orphan",
+    )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="routine")
 
 
@@ -560,6 +563,49 @@ class HabitCompletion(Base):
 
     # Relationships
     habit: Mapped["Habit"] = relationship(back_populates="completions")
+
+
+# ---------------------------------------------------------------------------
+# Routine Completions — per-event routine completion records
+# ---------------------------------------------------------------------------
+
+class RoutineCompletion(Base):
+    """Record of a single routine completion event."""
+
+    __tablename__ = "routine_completions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    routine_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routines.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    completed_at: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    freeform_note: Mapped[str | None] = mapped_column(Text)
+    reconciled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"),
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('all_done', 'partial', 'skipped')",
+            name="ck_routine_completions_status",
+        ),
+        Index(
+            "ix_routine_completions_routine_completed",
+            "routine_id", "completed_at",
+        ),
+        Index("ix_routine_completions_reconciled", "reconciled"),
+    )
+
+    # Relationships
+    routine: Mapped["Routine"] = relationship(back_populates="completions")
 
 
 # ---------------------------------------------------------------------------

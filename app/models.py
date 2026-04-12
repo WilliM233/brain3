@@ -32,6 +32,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -517,6 +518,48 @@ class Habit(Base):
 
     # Relationships
     routine: Mapped["Routine | None"] = relationship(back_populates="habits")
+    completions: Mapped[list["HabitCompletion"]] = relationship(
+        back_populates="habit", cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Habit Completions — per-event completion records
+# ---------------------------------------------------------------------------
+
+class HabitCompletion(Base):
+    """Record of a single habit completion event."""
+
+    __tablename__ = "habit_completions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    habit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("habits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    completed_at: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "habit_id", "completed_at",
+            name="uq_habit_completions_habit_date",
+        ),
+        CheckConstraint(
+            "source IN ('individual', 'routine_cascade', 'reconciliation')",
+            name="ck_habit_completions_source",
+        ),
+    )
+
+    # Relationships
+    habit: Mapped["Habit"] = relationship(back_populates="completions")
 
 
 # ---------------------------------------------------------------------------

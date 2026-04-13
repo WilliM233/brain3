@@ -30,6 +30,7 @@ from app.schemas.notifications import (
     NotificationResponse,
     NotificationUpdate,
 )
+from app.services.notification_defaults import get_default_responses
 
 router = APIRouter()
 
@@ -70,9 +71,14 @@ def validate_status_transition(current: str, requested: str) -> bool:
 def create_notification(
     payload: NotificationCreate, db: Session = Depends(get_db),
 ) -> NotificationQueue:
-    """Create a notification. Status is always set to pending."""
+    """Create a notification. Status is always set to pending.
+
+    When canned_responses is null/omitted, auto-populates from type defaults.
+    """
     data = payload.model_dump()
     data["status"] = "pending"
+    if data.get("canned_responses") is None:
+        data["canned_responses"] = get_default_responses(data["notification_type"])
     notification = NotificationQueue(**data)
     db.add(notification)
     db.commit()

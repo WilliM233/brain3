@@ -14,9 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Default canned responses and validation for the notification queue."""
+"""Default canned responses, expiry windows, and retention for the notification queue."""
 
 from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy.orm import Session
 
 CANNED_RESPONSE_DEFAULTS: dict[str, list[str]] = {
     "habit_nudge": [
@@ -99,3 +103,98 @@ def validate_canned_responses(responses: list[str]) -> None:
             msg = "canned_responses contains duplicate entries"
             raise ValueError(msg)
         seen.add(item)
+
+
+# ---------------------------------------------------------------------------
+# Expiry window defaults (per notification type)
+# ---------------------------------------------------------------------------
+
+EXPIRY_DEFAULTS: dict[str, timedelta] = {
+    "habit_nudge": timedelta(hours=2),
+    "routine_checklist": timedelta(hours=4),
+    "checkin_prompt": timedelta(hours=12),
+    "time_block_reminder": timedelta(hours=1),
+    "deadline_event_alert": timedelta(hours=0),  # special: expires at target deadline
+    "pattern_observation": timedelta(hours=24),
+    "stale_work_nudge": timedelta(hours=24),
+}
+
+# ---------------------------------------------------------------------------
+# Retention policy
+# ---------------------------------------------------------------------------
+
+RETENTION_DAYS: int = 90
+
+
+# ---------------------------------------------------------------------------
+# Expiry calculation
+# ---------------------------------------------------------------------------
+
+
+def calculate_expires_at(
+    notification_type: str,
+    delivered_at: datetime,
+    existing_expires_at: datetime | None = None,
+) -> datetime | None:
+    """Calculate the expiry timestamp for a notification at delivery time.
+
+    If *existing_expires_at* is already set (per-notification override), it is
+    returned unchanged.  Otherwise the type default is applied:
+
+    - ``deadline_event_alert`` with no override falls back to 24h from delivery
+      (the creator *should* have set an explicit ``expires_at``).
+    - All other types: ``delivered_at + EXPIRY_DEFAULTS[type]``.
+    """
+    if existing_expires_at is not None:
+        return existing_expires_at
+
+    if notification_type == "deadline_event_alert":
+        return delivered_at + timedelta(hours=24)
+
+    default_delta = EXPIRY_DEFAULTS.get(notification_type)
+    if default_delta is None:
+        return None
+
+    return delivered_at + default_delta
+
+
+# ---------------------------------------------------------------------------
+# Query helpers (called by scheduler — Stream C)
+# ---------------------------------------------------------------------------
+
+
+def get_expired_notifications(session: Session) -> list:
+    """Return delivered notifications whose expiry window has passed."""
+    from app.models import NotificationQueue
+
+    now = datetime.now(tz=UTC)
+    return (
+        session.query(NotificationQueue)
+        .filter(
+            NotificationQueue.status == "delivered",
+            NotificationQueue.expires_at.isnot(None),
+            NotificationQueue.expires_at < now,
+        )
+        .all()
+    )
+
+
+def get_retention_candidates(
+    session: Session, retention_days: int = RETENTION_DAYS,
+) -> list:
+    """Return terminal-state notifications older than *retention_days*.
+
+    Uses ``updated_at`` as the reference timestamp.  Terminal states are
+    ``responded`` and ``expired``.
+    """
+    from app.models import NotificationQueue
+
+    cutoff = datetime.now(tz=UTC) - timedelta(days=retention_days)
+    return (
+        session.query(NotificationQueue)
+        .filter(
+            NotificationQueue.status.in_(["responded", "expired"]),
+            NotificationQueue.updated_at < cutoff,
+        )
+        .all()
+    )

@@ -16,7 +16,7 @@
 
 """CRUD endpoints for the Notification Queue."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -26,6 +26,7 @@ from app.database import get_db
 from app.models import NotificationQueue
 from app.schemas.notifications import (
     NotificationCreate,
+    NotificationRespondRequest,
     NotificationResponse,
     NotificationUpdate,
 )
@@ -146,6 +147,63 @@ def get_notification(
     )
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
+    return notification
+
+
+# ---------------------------------------------------------------------------
+# POST — record a response to a delivered notification
+# ---------------------------------------------------------------------------
+
+@router.post("/{notification_id}/respond", response_model=NotificationResponse)
+def respond_to_notification(
+    notification_id: UUID,
+    payload: NotificationRespondRequest,
+    db: Session = Depends(get_db),
+) -> NotificationQueue:
+    """Record a user response to a delivered notification."""
+    notification = (
+        db.query(NotificationQueue)
+        .filter(NotificationQueue.id == notification_id)
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    # Status-specific error responses
+    if notification.status == "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Notification has not been delivered yet",
+        )
+    if notification.status == "responded":
+        raise HTTPException(
+            status_code=409,
+            detail="Notification has already been responded to",
+        )
+    if notification.status == "expired":
+        raise HTTPException(
+            status_code=410,
+            detail="Notification has expired",
+        )
+
+    # Validate response against canned_responses (if defined)
+    if payload.response != "partial" and notification.canned_responses is not None:
+        if payload.response not in notification.canned_responses:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Invalid response: must be one of {notification.canned_responses} "
+                    'or "partial"'
+                ),
+            )
+
+    notification.response = payload.response
+    notification.response_note = payload.response_note
+    notification.responded_at = datetime.now(tz=UTC)
+    notification.status = "responded"
+
+    db.commit()
+    db.refresh(notification)
     return notification
 
 

@@ -99,6 +99,13 @@ class NotificationUpdate(BaseModel):
         return v
 
 
+class NotificationRespondRequest(BaseModel):
+    """Request body for responding to a delivered notification."""
+
+    response: str = Field(min_length=1, max_length=200)
+    response_note: str | None = Field(default=None, max_length=1000)
+
+
 class NotificationResponse(BaseModel):
     """Notification returned from API — includes id and timestamps."""
 

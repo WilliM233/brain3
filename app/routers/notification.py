@@ -30,7 +30,7 @@ from app.schemas.notifications import (
     NotificationResponse,
     NotificationUpdate,
 )
-from app.services.notification_defaults import get_default_responses
+from app.services.notification_defaults import calculate_expires_at, get_default_responses
 
 router = APIRouter()
 
@@ -256,6 +256,15 @@ async def update_notification(
 
     for field, value in updates.items():
         setattr(notification, field, value)
+
+    # Auto-populate expires_at on delivery
+    if updates.get("status") == "delivered":
+        delivered_at = datetime.now(tz=UTC)
+        notification.expires_at = calculate_expires_at(
+            notification.notification_type,
+            delivered_at,
+            notification.expires_at,
+        )
 
     db.commit()
     db.refresh(notification)

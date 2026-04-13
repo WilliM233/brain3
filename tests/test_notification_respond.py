@@ -202,10 +202,15 @@ class TestPartialCompletion:
 class TestNullCannedResponses:
     """Notifications with null canned_responses accept any non-empty response."""
 
-    def test_any_response_accepted(self, client):
-        """Any string accepted when canned_responses is null."""
-        n = make_notification(client)  # no canned_responses
-        assert n["canned_responses"] is None
+    def test_any_response_accepted_when_canned_responses_cleared(self, client):
+        """Any string accepted when canned_responses is explicitly cleared to null."""
+        n = make_notification(client)
+        # Auto-populated defaults are present; clear them via PATCH
+        resp = client.patch(
+            f"{BASE_URL}/{n['id']}", json={"canned_responses": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["canned_responses"] is None
         deliver(client, n["id"])
 
         resp = client.post(
@@ -215,9 +220,17 @@ class TestNullCannedResponses:
         assert resp.status_code == 200
         assert resp.json()["response"] == "Freestyle answer"
 
+    def test_defaults_auto_populated_when_omitted(self, client):
+        """Omitting canned_responses auto-populates from type defaults."""
+        n = make_notification(client)  # habit_nudge, no explicit canned_responses
+        assert n["canned_responses"] is not None
+        assert "Already done" in n["canned_responses"]
+
     def test_partial_also_accepted(self, client):
         """'partial' still works with null canned_responses."""
         n = make_notification(client)
+        # Clear auto-populated defaults
+        client.patch(f"{BASE_URL}/{n['id']}", json={"canned_responses": None})
         deliver(client, n["id"])
 
         resp = client.post(

@@ -24,6 +24,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services.notification_defaults import validate_canned_responses
+
 NotificationType = Literal[
     "habit_nudge",
     "routine_checklist",
@@ -57,18 +59,12 @@ class NotificationCreate(BaseModel):
 
     @field_validator("canned_responses")
     @classmethod
-    def validate_canned_responses(
+    def check_canned_responses(
         cls, v: list[str] | None,
     ) -> list[str] | None:
         if v is None:
             return v
-        if len(v) < 1 or len(v) > 10:
-            msg = "canned_responses must contain 1-10 items"
-            raise ValueError(msg)
-        for item in v:
-            if not isinstance(item, str) or len(item) < 1 or len(item) > 200:
-                msg = "Each canned response must be a non-empty string up to 200 characters"
-                raise ValueError(msg)
+        validate_canned_responses(v)
         return v
 
 
@@ -84,18 +80,12 @@ class NotificationUpdate(BaseModel):
 
     @field_validator("canned_responses")
     @classmethod
-    def validate_canned_responses(
+    def check_canned_responses(
         cls, v: list[str] | None,
     ) -> list[str] | None:
         if v is None:
             return v
-        if len(v) < 1 or len(v) > 10:
-            msg = "canned_responses must contain 1-10 items"
-            raise ValueError(msg)
-        for item in v:
-            if not isinstance(item, str) or len(item) < 1 or len(item) > 200:
-                msg = "Each canned response must be a non-empty string up to 200 characters"
-                raise ValueError(msg)
+        validate_canned_responses(v)
         return v
 
 

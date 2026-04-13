@@ -913,3 +913,80 @@ class Skill(Base):
         secondary="skill_directives", back_populates="skills",
     )
     artifact: Mapped["Artifact | None"] = relationship(back_populates="skills")
+
+
+# ---------------------------------------------------------------------------
+# Notification Queue — proactive notification system
+# ---------------------------------------------------------------------------
+
+class NotificationQueue(Base):
+    """Queued notification awaiting delivery and optional user response."""
+
+    __tablename__ = "notification_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    notification_type: Mapped[str] = mapped_column(String, nullable=False)
+    delivery_type: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="notification",
+    )
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="pending",
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    target_entity_type: Mapped[str] = mapped_column(String, nullable=False)
+    target_entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False,
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    canned_responses: Mapped[list | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+    )
+    response: Mapped[str | None] = mapped_column(String)
+    response_note: Mapped[str | None] = mapped_column(Text)
+    responded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    scheduled_by: Mapped[str] = mapped_column(String, nullable=False)
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "notification_type IN ("
+            "'habit_nudge', 'routine_checklist', 'checkin_prompt', "
+            "'time_block_reminder', 'deadline_event_alert', "
+            "'pattern_observation', 'stale_work_nudge'"
+            ")",
+            name="ck_notification_queue_notification_type",
+        ),
+        CheckConstraint(
+            "delivery_type IN ('notification')",
+            name="ck_notification_queue_delivery_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'delivered', 'responded', 'expired')",
+            name="ck_notification_queue_status",
+        ),
+        CheckConstraint(
+            "scheduled_by IN ('system', 'claude', 'rule')",
+            name="ck_notification_queue_scheduled_by",
+        ),
+        Index("ix_nq_scheduler_poll", "status", "scheduled_at"),
+        Index("ix_nq_expiry_check", "status", "expires_at"),
+        Index("ix_nq_target_lookup", "target_entity_type", "target_entity_id"),
+        Index("ix_nq_rule_traceability", "rule_id"),
+        Index("ix_nq_type_filter", "notification_type"),
+        Index("ix_nq_scheduled_by", "scheduled_by"),
+    )

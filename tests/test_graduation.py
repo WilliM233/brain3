@@ -36,12 +36,14 @@ from app.services.graduation import (
     GraduationResult,
     ReScaffoldResult,
     SlipDetectionResult,
+    StackingRecommendation,
     apply_frequency_step_down,
     apply_re_scaffold_tightening,
     evaluate_all_graduated_habits,
     evaluate_frequency_step_down,
     evaluate_graduated_habit_slip,
     evaluate_graduation,
+    get_stacking_recommendation,
     graduate_habit,
     next_step_down,
     re_scaffold_habit,
@@ -1722,3 +1724,265 @@ class TestReScaffoldHabit:
         with pytest.raises(Exception) as exc_info:
             re_scaffold_habit(db, uuid.uuid4())
         assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# [2G-05] Stacking Recommendation Engine
+# ===========================================================================
+
+
+class TestGetStackingRecommendation:
+    """Tests for get_stacking_recommendation()."""
+
+    def test_nonexistent_routine_404(self, db):
+        """Nonexistent routine_id raises 404."""
+        with pytest.raises(Exception) as exc_info:
+            get_stacking_recommendation(db, uuid.uuid4())
+        assert exc_info.value.status_code == 404
+
+    def test_freeform_routine_no_habits(self, db):
+        """Routine with no habits returns ready=True, no suggestion."""
+        routine = _create_routine(db)
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.suggested_next is None
+        assert result.active_accountable_habits == []
+        assert result.blocking_habits == []
+        assert "freeform" in result.message.lower()
+
+    def test_no_accountable_habits_ready(self, db):
+        """Routine with only tracking habits returns ready=True."""
+        routine = _create_routine(db)
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            title="Tracking Habit",
+        )
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.active_accountable_habits == []
+        assert result.blocking_habits == []
+        assert "no habits are in the accountability loop" in result.message.lower()
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Tracking Habit"
+        assert result.suggested_next.source == "queued"
+
+    def test_all_accountable_stable_rate(self, db):
+        """Ready when all accountable habits have >= 60% already-done rate."""
+        routine = _create_routine(db)
+        habit = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Stable Habit", notification_frequency="daily",
+            introduced_at=date.today() - timedelta(days=30),
+        )
+        # Create 10 notifications: 7 "Already done" = 70% rate
+        for i in range(7):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        for i in range(3):
+            _create_notification(db, habit.id, "Done now", "responded", days_ago=i + 8)
+
+        # Add a tracking habit to be suggested
+        tracking = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            title="Next Habit",
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert len(result.active_accountable_habits) == 1
+        assert result.active_accountable_habits[0].is_stable is True
+        assert result.blocking_habits == []
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Next Habit"
+        assert "ready to add" in result.message.lower()
+
+    def test_accountable_habit_at_weekly_is_stable(self, db):
+        """A habit at weekly frequency is stable regardless of rate."""
+        routine = _create_routine(db)
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Weekly Habit", notification_frequency="weekly",
+            introduced_at=date.today() - timedelta(days=30),
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert len(result.active_accountable_habits) == 1
+        assert result.active_accountable_habits[0].is_stable is True
+        assert "weekly" in result.active_accountable_habits[0].stability_detail.lower()
+
+    def test_accountable_habit_stable_by_completions(self, db):
+        """Stable via 14+ days accountable with 7 consecutive completions."""
+        routine = _create_routine(db)
+        habit = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Consistent Habit", notification_frequency="daily",
+            introduced_at=date.today() - timedelta(days=20),
+        )
+        # No notifications (rate would be 0), but 7 completions in last 7 days
+        for i in range(7):
+            _create_completion(db, habit.id, days_ago=i)
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.active_accountable_habits[0].is_stable is True
+        assert "no missed completions" in result.active_accountable_habits[0].stability_detail.lower()
+
+    def test_one_blocking_habit(self, db):
+        """Not ready when an accountable habit has low rate and no completions."""
+        routine = _create_routine(db)
+        habit = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Struggling Habit", notification_frequency="daily",
+            introduced_at=date.today() - timedelta(days=10),
+        )
+        # 10 notifications: 3 "Already done" = 30% rate (below 60%)
+        for i in range(3):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        for i in range(7):
+            _create_notification(db, habit.id, "Done now", "responded", days_ago=i + 4)
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is False
+        assert len(result.blocking_habits) == 1
+        assert result.blocking_habits[0].habit_name == "Struggling Habit"
+        assert "hold steady" in result.message.lower()
+
+    def test_paused_before_tracking_priority(self, db):
+        """Paused tracking habits are suggested before active tracking habits."""
+        routine = _create_routine(db)
+
+        # Active tracking habit created first
+        active_tracking = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="active", title="Active Tracking",
+        )
+
+        # Paused tracking habit
+        paused_tracking = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="paused", title="Paused Tracking",
+            introduced_at=date.today() - timedelta(days=30),
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Paused Tracking"
+        assert result.suggested_next.source == "paused"
+
+    def test_paused_ordered_by_introduced_at(self, db):
+        """Multiple paused habits: oldest introduced_at is suggested first."""
+        routine = _create_routine(db)
+
+        newer = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="paused", title="Newer Paused",
+            introduced_at=date.today() - timedelta(days=5),
+        )
+        older = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="paused", title="Older Paused",
+            introduced_at=date.today() - timedelta(days=30),
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Older Paused"
+
+    def test_tracking_ordered_by_created_at(self, db):
+        """Multiple tracking habits: ordered by created_at (position proxy)."""
+        routine = _create_routine(db)
+
+        # Create in order — first created should be suggested
+        first = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="active", title="First Tracking",
+        )
+        second = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="tracking",
+            status="active", title="Second Tracking",
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "First Tracking"
+        assert result.suggested_next.source == "queued"
+
+    def test_all_graduated_no_suggestion(self, db):
+        """All habits graduated — ready but nothing to suggest."""
+        routine = _create_routine(db)
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="graduated",
+            status="active", title="Graduated One",
+            notification_frequency="graduated",
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.suggested_next is None
+        assert result.active_accountable_habits == []
+        assert "no habits are in the accountability loop" in result.message.lower()
+
+    def test_all_accountable_or_graduated_no_suggestion(self, db):
+        """All habits are either accountable (stable) or graduated — no tracking left."""
+        routine = _create_routine(db)
+        # Stable accountable habit (weekly)
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Weekly Habit", notification_frequency="weekly",
+        )
+        # Graduated habit
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="graduated",
+            status="active", title="Graduated",
+            notification_frequency="graduated",
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is True
+        assert result.suggested_next is None
+        assert "pipeline" in result.message.lower()
+
+    def test_routine_name_in_response(self, db):
+        """Response includes the routine name."""
+        routine = _create_routine(db)
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.routine_id == routine.id
+        assert result.routine_name == routine.title
+
+    def test_mixed_stable_and_blocking(self, db):
+        """One stable + one blocking = not ready."""
+        routine = _create_routine(db)
+
+        # Stable habit (weekly)
+        _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Stable One", notification_frequency="weekly",
+        )
+        # Blocking habit (low rate, few days)
+        blocking = _create_habit(
+            db, routine_id=routine.id, scaffolding_status="accountable",
+            title="Needs Work", notification_frequency="daily",
+            introduced_at=date.today() - timedelta(days=5),
+        )
+        for i in range(6):
+            _create_notification(db, blocking.id, "Done now", "responded", days_ago=i + 1)
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.ready is False
+        assert len(result.active_accountable_habits) == 2
+        assert len(result.blocking_habits) == 1
+        assert result.blocking_habits[0].habit_name == "Needs Work"

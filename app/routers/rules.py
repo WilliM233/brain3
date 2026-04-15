@@ -14,8 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""CRUD endpoints for Rules."""
+"""CRUD and evaluation endpoints for Rules."""
 
+from dataclasses import asdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,9 +28,11 @@ from app.schemas.rule import (
     NotificationType,
     RuleCreate,
     RuleEntityType,
+    RuleEvaluationResultResponse,
     RuleRead,
     RuleUpdate,
 )
+from app.services.rule_evaluation import evaluate_rules
 
 router = APIRouter()
 
@@ -78,6 +81,37 @@ def list_rules(
         query = query.filter(Rule.is_default == is_default)
 
     return query.order_by(Rule.created_at.desc()).all()
+
+
+# ---------------------------------------------------------------------------
+# POST — evaluate all rules
+# ---------------------------------------------------------------------------
+
+@router.post("/evaluate", response_model=list[RuleEvaluationResultResponse])
+def evaluate_all_rules(
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Evaluate all enabled rules and create notifications for matches."""
+    results = evaluate_rules(db)
+    return [asdict(r) for r in results]
+
+
+# ---------------------------------------------------------------------------
+# POST — evaluate single rule
+# ---------------------------------------------------------------------------
+
+@router.post("/{rule_id}/evaluate", response_model=RuleEvaluationResultResponse)
+def evaluate_single_rule(
+    rule_id: UUID,
+    respect_cooldown: bool = Query(True),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Evaluate a single rule, optionally ignoring cooldown for testing."""
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    results = evaluate_rules(db, rule_id=rule_id, respect_cooldown=respect_cooldown)
+    return asdict(results[0])
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Rules table model, migration, enum definitions (RuleEntityType, RuleMetric, RuleOperator, RuleAction), FK on notification_queue.rule_id with SET NULL cascade, Pydantic schemas with template placeholder validation (#140)
 - Rules CRUD endpoints — create, list (composable filters: entity_type, enabled, notification_type, entity_id), get, update, delete (#141)
 - Default rules seed data — 4 rules (consecutive skip alert, non-response alert, stale task nudge, streak break notice) with `is_default` column, unique name constraint, `is_default` list filter, and idempotent seed script support (#143)
+- Rule evaluation engine — service-layer `evaluate_rules()` function with metric computation (consecutive_skips, non_responses, days_untouched, streak_length), cooldown enforcement, template rendering, friction-matching for stale task nudge, notification creation via Stream B queue. Two API endpoints: `POST /api/rules/evaluate` (all rules) and `POST /api/rules/{rule_id}/evaluate` (single rule with optional cooldown bypass) (#142)
 
 ## [v1.2.0] — The Knowledge Layer
 

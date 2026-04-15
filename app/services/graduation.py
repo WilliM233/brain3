@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Graduation evaluation, execution, frequency step-down, re-scaffolding, and stacking recommendation service."""
+"""Graduation evaluation, execution, frequency step-down,
+re-scaffolding, and stacking recommendation service."""
 
 from __future__ import annotations
 

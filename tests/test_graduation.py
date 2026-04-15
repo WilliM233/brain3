@@ -36,7 +36,6 @@ from app.services.graduation import (
     GraduationResult,
     ReScaffoldResult,
     SlipDetectionResult,
-    StackingRecommendation,
     apply_frequency_step_down,
     apply_re_scaffold_tightening,
     evaluate_all_graduated_habits,
@@ -1783,7 +1782,7 @@ class TestGetStackingRecommendation:
             _create_notification(db, habit.id, "Done now", "responded", days_ago=i + 8)
 
         # Add a tracking habit to be suggested
-        tracking = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             title="Next Habit",
         )
@@ -1830,7 +1829,8 @@ class TestGetStackingRecommendation:
 
         assert result.ready is True
         assert result.active_accountable_habits[0].is_stable is True
-        assert "no missed completions" in result.active_accountable_habits[0].stability_detail.lower()
+        detail = result.active_accountable_habits[0].stability_detail
+        assert "no missed completions" in detail.lower()
 
     def test_one_blocking_habit(self, db):
         """Not ready when an accountable habit has low rate and no completions."""
@@ -1858,13 +1858,13 @@ class TestGetStackingRecommendation:
         routine = _create_routine(db)
 
         # Active tracking habit created first
-        active_tracking = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="active", title="Active Tracking",
         )
 
         # Paused tracking habit
-        paused_tracking = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="paused", title="Paused Tracking",
             introduced_at=date.today() - timedelta(days=30),
@@ -1881,12 +1881,12 @@ class TestGetStackingRecommendation:
         """Multiple paused habits: oldest introduced_at is suggested first."""
         routine = _create_routine(db)
 
-        newer = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="paused", title="Newer Paused",
             introduced_at=date.today() - timedelta(days=5),
         )
-        older = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="paused", title="Older Paused",
             introduced_at=date.today() - timedelta(days=30),
@@ -1902,11 +1902,11 @@ class TestGetStackingRecommendation:
         routine = _create_routine(db)
 
         # Create in order — first created should be suggested
-        first = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="active", title="First Tracking",
         )
-        second = _create_habit(
+        _create_habit(
             db, routine_id=routine.id, scaffolding_status="tracking",
             status="active", title="Second Tracking",
         )

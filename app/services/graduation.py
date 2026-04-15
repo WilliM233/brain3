@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Graduation evaluation and execution service for habit scaffolding."""
+"""Graduation evaluation, execution, and frequency step-down service for habit scaffolding."""
 
 from __future__ import annotations
 
@@ -279,4 +279,261 @@ def graduate_habit(
         previous_notification_frequency=previous_frequency,
         evaluation=evaluation,
         message=f"Habit '{habit.title}' graduated successfully{forced_label}",
+    )
+
+
+# ===========================================================================
+# [2G-03] Frequency Step-Down
+# ===========================================================================
+
+# Step-down progression — terminal states (graduated, none) are excluded.
+FREQUENCY_ORDER = [
+    "daily",
+    "every_other_day",
+    "twice_week",
+    "weekly",
+]
+
+# Evaluation constants — kept as module-level for easy adjustment.
+STEP_DOWN_NOTIFICATION_LIMIT = 14
+STEP_DOWN_MIN_NOTIFICATIONS = 5
+STEP_DOWN_RATE_THRESHOLD = 0.60
+STEP_DOWN_COOLDOWN_DAYS = 7
+
+
+def next_step_down(current: str) -> str | None:
+    """Return the next lower frequency, or None if already at weekly."""
+    try:
+        idx = FREQUENCY_ORDER.index(current)
+        if idx + 1 < len(FREQUENCY_ORDER):
+            return FREQUENCY_ORDER[idx + 1]
+    except ValueError:
+        pass
+    return None
+
+
+class FrequencyStepResult(BaseModel):
+    """Result of evaluating a habit's frequency step-down eligibility."""
+
+    recommend_step_down: bool
+    habit_id: UUID
+    current_frequency: str
+    recommended_frequency: str | None
+    current_rate: float
+    notifications_evaluated: int
+    cooldown_active: bool
+    cooldown_expires_at: datetime | None
+    blocking_reasons: list[str]
+
+
+class FrequencyChangeResult(BaseModel):
+    """Result of applying a frequency step-down."""
+
+    success: bool
+    habit_id: UUID
+    previous_frequency: str
+    new_frequency: str
+    message: str
+
+
+def evaluate_frequency_step_down(
+    db: Session,
+    habit_id: UUID,
+) -> FrequencyStepResult:
+    """Evaluate whether a habit should step down to a lower notification frequency.
+
+    Uses the N most recent notifications (LIMIT-based, not date-based) and a
+    60% "already done" threshold. Respects a 7-day cooldown after any frequency change.
+    """
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if habit is None:
+        raise ValueError(f"Habit {habit_id} not found")
+
+    now = datetime.now(tz=UTC)
+
+    # Helper to build a no-recommendation result
+    def _no_recommendation(
+        *,
+        reasons: list[str],
+        rate: float = 0.0,
+        evaluated: int = 0,
+        cooldown: bool = False,
+        cooldown_expires: datetime | None = None,
+    ) -> FrequencyStepResult:
+        return FrequencyStepResult(
+            recommend_step_down=False,
+            habit_id=habit_id,
+            current_frequency=habit.notification_frequency,
+            recommended_frequency=None,
+            current_rate=rate,
+            notifications_evaluated=evaluated,
+            cooldown_active=cooldown,
+            cooldown_expires_at=cooldown_expires,
+            blocking_reasons=reasons,
+        )
+
+    # Gate: must be active + accountable
+    if habit.status != "active" or habit.scaffolding_status != "accountable":
+        return _no_recommendation(
+            reasons=["Habit must be active with scaffolding_status 'accountable'"],
+        )
+
+    # Gate: current frequency must be in the step-down progression
+    if habit.notification_frequency not in FREQUENCY_ORDER:
+        return _no_recommendation(
+            reasons=[
+                f"Frequency '{habit.notification_frequency}' is not in the "
+                "step-down progression"
+            ],
+        )
+
+    # Cooldown check
+    if habit.last_frequency_changed_at is not None:
+        last_changed = habit.last_frequency_changed_at
+        # SQLite returns naive datetimes — normalize to UTC-aware for comparison
+        if last_changed.tzinfo is None:
+            last_changed = last_changed.replace(tzinfo=UTC)
+        cooldown_expires = last_changed + timedelta(
+            days=STEP_DOWN_COOLDOWN_DAYS,
+        )
+        if now < cooldown_expires:
+            return _no_recommendation(
+                cooldown=True,
+                cooldown_expires=cooldown_expires,
+                reasons=[
+                    f"Cooldown active — last frequency change was "
+                    f"{(now - last_changed).days} days ago, "
+                    f"need {STEP_DOWN_COOLDOWN_DAYS}"
+                ],
+            )
+
+    # Query most recent N notifications
+    notifications = (
+        db.query(NotificationQueue)
+        .filter(
+            NotificationQueue.target_entity_type == "habit",
+            NotificationQueue.target_entity_id == habit_id,
+            NotificationQueue.notification_type == "habit_nudge",
+            NotificationQueue.status.in_(["responded", "expired"]),
+        )
+        .order_by(NotificationQueue.scheduled_at.desc())
+        .limit(STEP_DOWN_NOTIFICATION_LIMIT)
+        .all()
+    )
+
+    total = len(notifications)
+
+    # Minimum data check
+    if total < STEP_DOWN_MIN_NOTIFICATIONS:
+        return _no_recommendation(
+            evaluated=total,
+            reasons=[
+                f"Need at least {STEP_DOWN_MIN_NOTIFICATIONS} notifications "
+                f"to evaluate step-down (have {total})"
+            ],
+        )
+
+    # Compute "already done" rate
+    already_done_count = sum(
+        1 for n in notifications if n.response == "Already done"
+    )
+    rate = already_done_count / total
+
+    # Check if already at minimum stepped frequency
+    recommended = next_step_down(habit.notification_frequency)
+    if recommended is None:
+        return _no_recommendation(
+            rate=rate,
+            evaluated=total,
+            reasons=[
+                "Already at minimum stepped frequency (weekly). "
+                "Full graduation evaluated separately."
+            ],
+        )
+
+    # Threshold check
+    if rate < STEP_DOWN_RATE_THRESHOLD:
+        return _no_recommendation(
+            rate=rate,
+            evaluated=total,
+            reasons=[
+                f"Rate {rate:.0%} below step-down threshold "
+                f"{STEP_DOWN_RATE_THRESHOLD:.0%}"
+            ],
+        )
+
+    return FrequencyStepResult(
+        recommend_step_down=True,
+        habit_id=habit_id,
+        current_frequency=habit.notification_frequency,
+        recommended_frequency=recommended,
+        current_rate=rate,
+        notifications_evaluated=total,
+        cooldown_active=False,
+        cooldown_expires_at=None,
+        blocking_reasons=[],
+    )
+
+
+def apply_frequency_step_down(
+    db: Session,
+    habit_id: UUID,
+    new_frequency: str,
+) -> FrequencyChangeResult:
+    """Apply a one-level frequency step-down to a habit.
+
+    Validates that new_frequency is exactly one step below the current frequency.
+    Rejects skipping levels, going backwards, or invalid frequencies.
+    """
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if habit is None:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    previous = habit.notification_frequency
+
+    # Validate: new_frequency must be exactly one step below current
+    expected_next = next_step_down(previous)
+    if expected_next is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot step down from '{previous}' — "
+                "not in the step-down progression or already at minimum"
+            ),
+        )
+    if new_frequency != expected_next:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid step-down: '{previous}' → '{new_frequency}'. "
+                f"Expected exactly one level: '{previous}' → '{expected_next}'"
+            ),
+        )
+
+    # Apply the change
+    habit.notification_frequency = new_frequency
+    habit.last_frequency_changed_at = datetime.now(tz=UTC)
+
+    # Log activity
+    activity = ActivityLog(
+        action_type="completed",
+        notes=(
+            f"Notification frequency stepped down: {habit.title}. "
+            f"{previous} → {new_frequency}."
+        ),
+        habit_id=habit_id,
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(habit)
+
+    return FrequencyChangeResult(
+        success=True,
+        habit_id=habit_id,
+        previous_frequency=previous,
+        new_frequency=new_frequency,
+        message=(
+            f"Frequency stepped down for '{habit.title}': "
+            f"{previous} → {new_frequency}"
+        ),
     )

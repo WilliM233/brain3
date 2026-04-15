@@ -14,17 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Graduation evaluation service — rolling-window analysis for habit scaffolding."""
+"""Graduation evaluation and execution service for habit scaffolding."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.models import Habit, NotificationQueue
+from app.models import ActivityLog, Habit, NotificationQueue
 from app.services.graduation_defaults import resolve_graduation_params
 
 
@@ -43,6 +44,17 @@ class GraduationResult(BaseModel):
     meets_rate: bool
     meets_threshold: bool
     blocking_reasons: list[str]
+
+
+class GraduationExecutionResult(BaseModel):
+    """Result of executing a habit graduation."""
+
+    success: bool
+    habit_id: UUID
+    previous_scaffolding_status: str
+    previous_notification_frequency: str
+    evaluation: GraduationResult | None
+    message: str
 
 
 def apply_re_scaffold_tightening(
@@ -173,4 +185,98 @@ def evaluate_graduation(
         meets_rate=meets_rate,
         meets_threshold=meets_threshold,
         blocking_reasons=blocking_reasons,
+    )
+
+
+def graduate_habit(
+    db: Session,
+    habit_id: UUID,
+    force: bool = False,
+) -> GraduationExecutionResult:
+    """Execute the graduation state transition for a habit.
+
+    Moves scaffolding_status from 'accountable' to 'graduated' and sets
+    notification_frequency to 'graduated'. Does NOT change habit.status —
+    the habit remains active and continues appearing in routine checklists.
+    """
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if habit is None:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    # Snapshot previous values for audit trail
+    previous_scaffolding = habit.scaffolding_status
+    previous_frequency = habit.notification_frequency
+
+    # Already graduated — idempotency guard
+    if habit.scaffolding_status == "graduated":
+        return GraduationExecutionResult(
+            success=False,
+            habit_id=habit_id,
+            previous_scaffolding_status=previous_scaffolding,
+            previous_notification_frequency=previous_frequency,
+            evaluation=None,
+            message="Habit is already graduated",
+        )
+
+    # Status must be active
+    if habit.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot graduate a habit with status '{habit.status}' — must be 'active'",
+        )
+
+    # Scaffolding must be accountable
+    if habit.scaffolding_status != "accountable":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot graduate from scaffolding_status '{habit.scaffolding_status}' "
+                "— must be 'accountable'"
+            ),
+        )
+
+    # Evaluate eligibility
+    evaluation = evaluate_graduation(db, habit_id)
+
+    if not force and not evaluation.eligible:
+        return GraduationExecutionResult(
+            success=False,
+            habit_id=habit_id,
+            previous_scaffolding_status=previous_scaffolding,
+            previous_notification_frequency=previous_frequency,
+            evaluation=evaluation,
+            message=(
+                "Habit does not meet graduation criteria. "
+                + "; ".join(evaluation.blocking_reasons)
+            ),
+        )
+
+    # Execute transition
+    habit.scaffolding_status = "graduated"
+    habit.notification_frequency = "graduated"
+
+    # Log activity entry
+    forced_label = " (forced)" if force else ""
+    activity = ActivityLog(
+        action_type="completed",
+        notes=(
+            f"Habit graduated{forced_label}: {habit.title}. "
+            f"Rate: {evaluation.current_rate:.0%} over {evaluation.window_days} days. "
+            f"Streak preserved at {habit.best_streak}."
+        ),
+        habit_id=habit_id,
+    )
+    db.add(activity)
+
+    # Atomic commit — transition + activity log in one transaction
+    db.commit()
+    db.refresh(habit)
+
+    return GraduationExecutionResult(
+        success=True,
+        habit_id=habit_id,
+        previous_scaffolding_status=previous_scaffolding,
+        previous_notification_frequency=previous_frequency,
+        evaluation=evaluation,
+        message=f"Habit '{habit.title}' graduated successfully{forced_label}",
     )

@@ -21,11 +21,13 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.models import Habit, NotificationQueue
+from app.models import ActivityLog, Habit, NotificationQueue
 from app.services.graduation import (
+    GraduationExecutionResult,
     GraduationResult,
     apply_re_scaffold_tightening,
     evaluate_graduation,
+    graduate_habit,
 )
 from app.services.graduation_defaults import resolve_graduation_params
 from tests.conftest import make_habit
@@ -430,3 +432,242 @@ class TestFrictionScoreValidation:
         habit = make_habit(client)
         assert habit["re_scaffold_count"] == 0
         assert habit["last_frequency_changed_at"] is None
+
+
+# ===========================================================================
+# graduate_habit — execution & state transition
+# ===========================================================================
+
+
+class TestGraduateHabit:
+    """Tests for the graduate_habit() service function ([2G-02])."""
+
+    def _eligible_habit(self, db, **overrides) -> Habit:
+        """Create a habit that meets graduation criteria."""
+        defaults = {
+            "introduced_at": date.today() - timedelta(days=60),
+            "scaffolding_status": "accountable",
+            "notification_frequency": "daily",
+            "status": "active",
+        }
+        defaults.update(overrides)
+        habit = _create_habit(db, **defaults)
+        # 10 notifications, 9 "Already done" = 90% rate
+        for i in range(9):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        _create_notification(db, habit.id, "Skip today", "responded", days_ago=10)
+        return habit
+
+    def _ineligible_habit(self, db, **overrides) -> Habit:
+        """Create a habit that does NOT meet graduation criteria (low rate)."""
+        defaults = {
+            "introduced_at": date.today() - timedelta(days=60),
+            "scaffolding_status": "accountable",
+            "notification_frequency": "daily",
+            "status": "active",
+        }
+        defaults.update(overrides)
+        habit = _create_habit(db, **defaults)
+        # 10 notifications, 3 "Already done" = 30% rate
+        for i in range(3):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        for i in range(7):
+            _create_notification(db, habit.id, "Skip today", "responded", days_ago=i + 4)
+        return habit
+
+    # --- Successful graduation ---
+
+    def test_successful_graduation(self, db):
+        """Eligible habit transitions scaffolding_status and notification_frequency."""
+        habit = self._eligible_habit(db)
+        original_best_streak = habit.best_streak
+        original_last_completed = habit.last_completed
+
+        result = graduate_habit(db, habit.id)
+
+        assert isinstance(result, GraduationExecutionResult)
+        assert result.success is True
+        assert result.previous_scaffolding_status == "accountable"
+        assert result.previous_notification_frequency == "daily"
+        assert result.evaluation is not None
+        assert result.evaluation.eligible is True
+        assert "graduated successfully" in result.message
+
+        db.refresh(habit)
+        assert habit.scaffolding_status == "graduated"
+        assert habit.notification_frequency == "graduated"
+        assert habit.status == "active"
+        assert habit.best_streak == original_best_streak
+        assert habit.last_completed == original_last_completed
+
+    def test_graduation_preserves_active_status(self, db):
+        """habit.status remains 'active' after graduation."""
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+        db.refresh(habit)
+        assert habit.status == "active"
+
+    def test_graduation_preserves_streak_history(self, db):
+        """best_streak and last_completed are unchanged after graduation."""
+        habit = self._eligible_habit(
+            db, best_streak=15, last_completed=date.today() - timedelta(days=1),
+        )
+        # Force the values in since _create_habit defaults may not set them
+        habit.best_streak = 15
+        habit.last_completed = date.today() - timedelta(days=1)
+        db.commit()
+        db.refresh(habit)
+
+        graduate_habit(db, habit.id)
+        db.refresh(habit)
+
+        assert habit.best_streak == 15
+        assert habit.last_completed == date.today() - timedelta(days=1)
+
+    # --- Forced graduation ---
+
+    def test_forced_graduation_bypasses_eligibility(self, db):
+        """force=True graduates even when evaluation says ineligible."""
+        habit = self._ineligible_habit(db)
+
+        result = graduate_habit(db, habit.id, force=True)
+
+        assert result.success is True
+        assert result.evaluation is not None
+        assert result.evaluation.eligible is False
+        assert "(forced)" in result.message
+
+        db.refresh(habit)
+        assert habit.scaffolding_status == "graduated"
+        assert habit.notification_frequency == "graduated"
+
+    def test_forced_graduation_activity_log_label(self, db):
+        """Forced graduation activity log entry includes '(forced)' marker."""
+        habit = self._ineligible_habit(db)
+        graduate_habit(db, habit.id, force=True)
+
+        log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .first()
+        )
+        assert log is not None
+        assert "(forced)" in log.notes
+
+    # --- Ineligible habit (force=False) ---
+
+    def test_ineligible_returns_failure(self, db):
+        """Ineligible habit with force=False returns success=False."""
+        habit = self._ineligible_habit(db)
+
+        result = graduate_habit(db, habit.id, force=False)
+
+        assert result.success is False
+        assert result.evaluation is not None
+        assert result.evaluation.eligible is False
+        assert len(result.evaluation.blocking_reasons) > 0
+
+        db.refresh(habit)
+        assert habit.scaffolding_status == "accountable"
+        assert habit.notification_frequency == "daily"
+
+    # --- Wrong status ---
+
+    def test_paused_habit_rejected(self, db):
+        """Cannot graduate a paused habit."""
+        habit = _create_habit(
+            db, status="paused", scaffolding_status="accountable",
+            notification_frequency="daily",
+        )
+        with pytest.raises(Exception) as exc_info:
+            graduate_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "paused" in exc_info.value.detail
+
+    def test_abandoned_habit_rejected(self, db):
+        """Cannot graduate an abandoned habit."""
+        habit = _create_habit(
+            db, status="abandoned", scaffolding_status="accountable",
+            notification_frequency="daily",
+        )
+        with pytest.raises(Exception) as exc_info:
+            graduate_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "abandoned" in exc_info.value.detail
+
+    # --- Wrong scaffolding_status ---
+
+    def test_tracking_scaffolding_rejected(self, db):
+        """Cannot graduate from 'tracking' scaffolding_status."""
+        habit = _create_habit(
+            db, scaffolding_status="tracking", notification_frequency="daily",
+        )
+        with pytest.raises(Exception) as exc_info:
+            graduate_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "tracking" in exc_info.value.detail
+
+    # --- Already graduated ---
+
+    def test_already_graduated_returns_failure(self, db):
+        """Already graduated habit returns success=False (not an exception)."""
+        habit = _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+        )
+
+        result = graduate_habit(db, habit.id)
+
+        assert result.success is False
+        assert result.message == "Habit is already graduated"
+        assert result.evaluation is None
+
+    # --- Nonexistent habit ---
+
+    def test_nonexistent_habit_404(self, db):
+        """Nonexistent habit_id raises 404."""
+        with pytest.raises(Exception) as exc_info:
+            graduate_habit(db, uuid.uuid4())
+        assert exc_info.value.status_code == 404
+
+    # --- Activity log ---
+
+    def test_activity_log_created_on_success(self, db):
+        """Successful graduation creates an activity log entry."""
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+
+        log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .first()
+        )
+        assert log is not None
+        assert log.action_type == "completed"
+        assert habit.title in log.notes
+        assert "graduated" in log.notes.lower()
+        assert "Rate:" in log.notes
+        assert "Streak preserved" in log.notes
+
+    def test_no_activity_log_on_failure(self, db):
+        """Failed graduation does NOT create an activity log entry."""
+        habit = self._ineligible_habit(db)
+        graduate_habit(db, habit.id, force=False)
+
+        log_count = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .count()
+        )
+        assert log_count == 0
+
+    def test_evaluated_graduation_no_forced_label(self, db):
+        """Normal (non-forced) graduation does NOT include '(forced)' in activity log."""
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+
+        log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .first()
+        )
+        assert "(forced)" not in log.notes

@@ -23,7 +23,6 @@ import pytest
 
 from app.models import ActivityLog, Habit, NotificationQueue
 from app.services.graduation import (
-    FREQUENCY_ORDER,
     FrequencyChangeResult,
     FrequencyStepResult,
     GraduationExecutionResult,

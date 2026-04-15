@@ -16,7 +16,7 @@
 
 """CRUD endpoints for Habits."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -114,6 +114,14 @@ def update_habit(
         )
         if not routine:
             raise HTTPException(status_code=400, detail="Routine not found")
+
+    # [2G-03] Manual override hook: if notification_frequency is changing,
+    # reset the cooldown timer so step-down evaluation respects the change.
+    if (
+        "notification_frequency" in updates
+        and updates["notification_frequency"] != habit.notification_frequency
+    ):
+        updates["last_frequency_changed_at"] = datetime.now(tz=UTC)
 
     for field, value in updates.items():
         setattr(habit, field, value)

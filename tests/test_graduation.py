@@ -23,11 +23,17 @@ import pytest
 
 from app.models import ActivityLog, Habit, NotificationQueue
 from app.services.graduation import (
+    FREQUENCY_ORDER,
+    FrequencyChangeResult,
+    FrequencyStepResult,
     GraduationExecutionResult,
     GraduationResult,
+    apply_frequency_step_down,
     apply_re_scaffold_tightening,
+    evaluate_frequency_step_down,
     evaluate_graduation,
     graduate_habit,
+    next_step_down,
 )
 from app.services.graduation_defaults import resolve_graduation_params
 from tests.conftest import make_habit
@@ -671,3 +677,462 @@ class TestGraduateHabit:
             .first()
         )
         assert "(forced)" not in log.notes
+
+
+# ===========================================================================
+# [2G-03] next_step_down
+# ===========================================================================
+
+
+class TestNextStepDown:
+
+    def test_daily_to_every_other_day(self):
+        assert next_step_down("daily") == "every_other_day"
+
+    def test_every_other_day_to_twice_week(self):
+        assert next_step_down("every_other_day") == "twice_week"
+
+    def test_twice_week_to_weekly(self):
+        assert next_step_down("twice_week") == "weekly"
+
+    def test_weekly_returns_none(self):
+        assert next_step_down("weekly") is None
+
+    def test_graduated_returns_none(self):
+        assert next_step_down("graduated") is None
+
+    def test_none_returns_none(self):
+        assert next_step_down("none") is None
+
+    def test_unknown_returns_none(self):
+        assert next_step_down("bogus") is None
+
+
+# ===========================================================================
+# [2G-03] evaluate_frequency_step_down
+# ===========================================================================
+
+
+class TestEvaluateFrequencyStepDown:
+
+    def _habit_with_notifications(
+        self, db, *, notification_frequency="daily", already_done=10,
+        other_response=4, status="active", scaffolding_status="accountable",
+        last_frequency_changed_at=None, **habit_overrides,
+    ) -> Habit:
+        """Create a habit with a mix of notification responses."""
+        habit = _create_habit(
+            db,
+            notification_frequency=notification_frequency,
+            status=status,
+            scaffolding_status=scaffolding_status,
+            last_frequency_changed_at=last_frequency_changed_at,
+            **habit_overrides,
+        )
+        for i in range(already_done):
+            _create_notification(
+                db, habit.id, "Already done", "responded", days_ago=i + 1,
+            )
+        for i in range(other_response):
+            _create_notification(
+                db, habit.id, "Skip today", "responded",
+                days_ago=already_done + i + 1,
+            )
+        return habit
+
+    # --- Recommends step-down ---
+
+    def test_daily_step_down_recommended(self, db):
+        """Daily habit with >= 60% already-done rate recommends every_other_day."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily", already_done=9, other_response=5,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert isinstance(result, FrequencyStepResult)
+        assert result.recommend_step_down is True
+        assert result.current_frequency == "daily"
+        assert result.recommended_frequency == "every_other_day"
+        assert result.current_rate == pytest.approx(9 / 14)
+        assert result.notifications_evaluated == 14
+        assert result.cooldown_active is False
+        assert result.blocking_reasons == []
+
+    def test_every_other_day_step_down(self, db):
+        """every_other_day → twice_week when rate meets threshold."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="every_other_day",
+            already_done=10, other_response=4,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is True
+        assert result.recommended_frequency == "twice_week"
+
+    def test_twice_week_step_down(self, db):
+        """twice_week → weekly when rate meets threshold."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="twice_week",
+            already_done=10, other_response=4,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is True
+        assert result.recommended_frequency == "weekly"
+
+    def test_exact_threshold_recommends(self, db):
+        """Exactly 60% rate still recommends step-down."""
+        # 6 out of 10 = 60%
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=6, other_response=4,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is True
+        assert result.current_rate == pytest.approx(0.6)
+
+    # --- No recommendation ---
+
+    def test_weekly_no_step_down(self, db):
+        """Weekly habit cannot step down further — graduation is separate."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="weekly",
+            already_done=14, other_response=0,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert result.recommended_frequency is None
+        assert any("minimum stepped frequency" in r for r in result.blocking_reasons)
+
+    def test_graduated_no_step_down(self, db):
+        """Graduated frequency is not in the progression."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="graduated",
+            already_done=10, other_response=4,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert any("not in the step-down progression" in r for r in result.blocking_reasons)
+
+    def test_none_frequency_no_step_down(self, db):
+        """'none' frequency is not in the progression."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="none",
+            already_done=10, other_response=4,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+
+    def test_rate_below_threshold(self, db):
+        """Rate below 60% does not recommend step-down."""
+        # 5 out of 14 = ~36%
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=5, other_response=9,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert result.current_rate == pytest.approx(5 / 14)
+        assert any("below step-down threshold" in r for r in result.blocking_reasons)
+
+    def test_insufficient_notifications(self, db):
+        """Fewer than 5 notifications returns no recommendation."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=3, other_response=1,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert result.notifications_evaluated == 4
+        assert any("Need at least 5" in r for r in result.blocking_reasons)
+
+    def test_zero_notifications(self, db):
+        """No notifications at all returns no recommendation."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=0, other_response=0,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert result.notifications_evaluated == 0
+
+    # --- Cooldown ---
+
+    def test_cooldown_active(self, db):
+        """Habit with recent frequency change is in cooldown."""
+        recent = datetime.now(tz=UTC) - timedelta(days=3)
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=14, other_response=0,
+            last_frequency_changed_at=recent,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert result.cooldown_active is True
+        assert result.cooldown_expires_at is not None
+        assert any("Cooldown active" in r for r in result.blocking_reasons)
+
+    def test_cooldown_expired(self, db):
+        """Habit with frequency change > 7 days ago is past cooldown."""
+        old = datetime.now(tz=UTC) - timedelta(days=10)
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=14, other_response=0,
+            last_frequency_changed_at=old,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is True
+        assert result.cooldown_active is False
+
+    def test_cooldown_exactly_7_days(self, db):
+        """Frequency change exactly 7 days ago — cooldown has expired."""
+        boundary = datetime.now(tz=UTC) - timedelta(days=7)
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=14, other_response=0,
+            last_frequency_changed_at=boundary,
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is True
+        assert result.cooldown_active is False
+
+    # --- Status gates ---
+
+    def test_paused_habit_rejected(self, db):
+        """Paused habits are not evaluated for step-down."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=14, other_response=0,
+            status="paused",
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+        assert any("active" in r for r in result.blocking_reasons)
+
+    def test_tracking_scaffolding_rejected(self, db):
+        """Tracking habits are not evaluated for step-down."""
+        habit = self._habit_with_notifications(
+            db, notification_frequency="daily",
+            already_done=14, other_response=0,
+            scaffolding_status="tracking",
+        )
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.recommend_step_down is False
+
+    def test_nonexistent_habit_raises(self, db):
+        """Evaluating a nonexistent habit raises ValueError."""
+        with pytest.raises(ValueError, match="not found"):
+            evaluate_frequency_step_down(db, uuid.uuid4())
+
+    # --- LIMIT-based query ---
+
+    def test_only_most_recent_14_considered(self, db):
+        """Only the 14 most recent notifications are evaluated."""
+        habit = _create_habit(db, notification_frequency="daily")
+        # 14 recent "Already done"
+        for i in range(14):
+            _create_notification(
+                db, habit.id, "Already done", "responded", days_ago=i + 1,
+            )
+        # 10 older "Skip today" — should be excluded by LIMIT
+        for i in range(10):
+            _create_notification(
+                db, habit.id, "Skip today", "responded", days_ago=20 + i,
+            )
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 1.0
+        assert result.recommend_step_down is True
+
+    def test_pending_excluded(self, db):
+        """Pending notifications are not counted."""
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(10):
+            _create_notification(
+                db, habit.id, "Already done", "responded", days_ago=i + 1,
+            )
+        _create_notification(db, habit.id, None, "pending", days_ago=1)
+        _create_notification(db, habit.id, None, "delivered", days_ago=1)
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 10
+
+
+# ===========================================================================
+# [2G-03] apply_frequency_step_down
+# ===========================================================================
+
+
+class TestApplyFrequencyStepDown:
+
+    def _accountable_habit(self, db, notification_frequency="daily") -> Habit:
+        return _create_habit(
+            db,
+            notification_frequency=notification_frequency,
+            scaffolding_status="accountable",
+        )
+
+    # --- Successful transitions ---
+
+    def test_daily_to_every_other_day(self, db):
+        habit = self._accountable_habit(db, "daily")
+        result = apply_frequency_step_down(db, habit.id, "every_other_day")
+
+        assert isinstance(result, FrequencyChangeResult)
+        assert result.success is True
+        assert result.previous_frequency == "daily"
+        assert result.new_frequency == "every_other_day"
+
+        db.refresh(habit)
+        assert habit.notification_frequency == "every_other_day"
+        assert habit.last_frequency_changed_at is not None
+
+    def test_every_other_day_to_twice_week(self, db):
+        habit = self._accountable_habit(db, "every_other_day")
+        result = apply_frequency_step_down(db, habit.id, "twice_week")
+
+        assert result.success is True
+        db.refresh(habit)
+        assert habit.notification_frequency == "twice_week"
+
+    def test_twice_week_to_weekly(self, db):
+        habit = self._accountable_habit(db, "twice_week")
+        result = apply_frequency_step_down(db, habit.id, "weekly")
+
+        assert result.success is True
+        db.refresh(habit)
+        assert habit.notification_frequency == "weekly"
+
+    def test_activity_log_created(self, db):
+        """Successful step-down creates an activity log entry."""
+        habit = self._accountable_habit(db)
+        apply_frequency_step_down(db, habit.id, "every_other_day")
+
+        log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .first()
+        )
+        assert log is not None
+        assert log.action_type == "completed"
+        assert "stepped down" in log.notes
+        assert "daily" in log.notes
+        assert "every_other_day" in log.notes
+
+    def test_last_frequency_changed_at_set(self, db):
+        """Step-down sets last_frequency_changed_at for cooldown tracking."""
+        habit = self._accountable_habit(db)
+        before = datetime.now(tz=UTC)
+
+        apply_frequency_step_down(db, habit.id, "every_other_day")
+
+        db.refresh(habit)
+        assert habit.last_frequency_changed_at is not None
+        # SQLite may strip tzinfo — normalize for comparison
+        changed_at = habit.last_frequency_changed_at
+        if changed_at.tzinfo is None:
+            changed_at = changed_at.replace(tzinfo=UTC)
+        assert changed_at >= before
+
+    # --- Rejected transitions ---
+
+    def test_skip_level_rejected(self, db):
+        """Cannot skip from daily to twice_week."""
+        habit = self._accountable_habit(db, "daily")
+        with pytest.raises(Exception) as exc_info:
+            apply_frequency_step_down(db, habit.id, "twice_week")
+        assert exc_info.value.status_code == 400
+        assert "Expected exactly one level" in exc_info.value.detail
+
+    def test_backward_rejected(self, db):
+        """Cannot go from every_other_day back to daily."""
+        habit = self._accountable_habit(db, "every_other_day")
+        with pytest.raises(Exception) as exc_info:
+            apply_frequency_step_down(db, habit.id, "daily")
+        assert exc_info.value.status_code == 400
+
+    def test_weekly_cannot_step_down(self, db):
+        """Cannot step down from weekly — that's graduation territory."""
+        habit = self._accountable_habit(db, "weekly")
+        with pytest.raises(Exception) as exc_info:
+            apply_frequency_step_down(db, habit.id, "graduated")
+        assert exc_info.value.status_code == 400
+        assert "not in the step-down progression" in exc_info.value.detail
+
+    def test_nonexistent_habit_404(self, db):
+        """Nonexistent habit_id raises 404."""
+        with pytest.raises(Exception) as exc_info:
+            apply_frequency_step_down(db, uuid.uuid4(), "every_other_day")
+        assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# [2G-03] Manual override — cooldown reset via PATCH
+# ===========================================================================
+
+
+class TestManualFrequencyOverrideCooldown:
+
+    def test_manual_change_sets_last_frequency_changed_at(self, client):
+        """Changing notification_frequency via PATCH sets last_frequency_changed_at."""
+        habit = make_habit(client, notification_frequency="daily",
+                          scaffolding_status="accountable")
+
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={"notification_frequency": "weekly"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["notification_frequency"] == "weekly"
+        assert data["last_frequency_changed_at"] is not None
+
+    def test_same_frequency_does_not_reset_cooldown(self, client):
+        """Setting notification_frequency to the same value does NOT reset cooldown."""
+        habit = make_habit(client, notification_frequency="daily",
+                          scaffolding_status="accountable")
+
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={"notification_frequency": "daily"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["last_frequency_changed_at"] is None
+
+    def test_manual_override_then_cooldown_respected(self, client, db):
+        """After manual override, step-down evaluation sees cooldown."""
+        habit_data = make_habit(client, notification_frequency="daily",
+                                scaffolding_status="accountable")
+
+        # Manual override to weekly
+        client.patch(
+            f"/api/habits/{habit_data['id']}",
+            json={"notification_frequency": "every_other_day"},
+        )
+
+        # Create enough notifications for evaluation
+        habit_id = uuid.UUID(habit_data["id"])
+        for i in range(14):
+            _create_notification(
+                db, habit_id, "Already done", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_frequency_step_down(db, habit_id)
+
+        assert result.cooldown_active is True
+        assert result.recommend_step_down is False

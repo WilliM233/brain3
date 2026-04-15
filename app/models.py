@@ -34,11 +34,15 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func, text
 
 from app.database import Base
+from app.schemas.rule import RuleAction, RuleEntityType, RuleMetric, RuleOperator
 
 # ---------------------------------------------------------------------------
 # Association table: task_tags
@@ -954,7 +958,9 @@ class NotificationQueue(Base):
         DateTime(timezone=True),
     )
     scheduled_by: Mapped[str] = mapped_column(String, nullable=False)
-    rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(),
     )
@@ -989,4 +995,65 @@ class NotificationQueue(Base):
         Index("ix_nq_rule_traceability", "rule_id"),
         Index("ix_nq_type_filter", "notification_type"),
         Index("ix_nq_scheduled_by", "scheduled_by"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rules Engine — conditional logic layer for automated notifications
+# ---------------------------------------------------------------------------
+
+class Rule(Base):
+    """A rule that watches an entity metric and fires a notification."""
+
+    __tablename__ = "rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    entity_type: Mapped[RuleEntityType] = mapped_column(
+        SAEnum(RuleEntityType, native_enum=False), nullable=False,
+    )
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    metric: Mapped[RuleMetric] = mapped_column(
+        SAEnum(RuleMetric, native_enum=False), nullable=False,
+    )
+    operator: Mapped[RuleOperator] = mapped_column(
+        SAEnum(RuleOperator, native_enum=False), nullable=False,
+    )
+    threshold: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[RuleAction] = mapped_column(
+        SAEnum(RuleAction, native_enum=False),
+        nullable=False,
+        server_default="create_notification",
+    )
+    notification_type: Mapped[str] = mapped_column(String, nullable=False)
+    message_template: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"),
+    )
+    cooldown_hours: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("24"),
+    )
+    last_triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "notification_type IN ("
+            "'habit_nudge', 'routine_checklist', 'checkin_prompt', "
+            "'time_block_reminder', 'deadline_event_alert', "
+            "'pattern_observation', 'stale_work_nudge'"
+            ")",
+            name="ck_rules_notification_type",
+        ),
+        Index("ix_rules_entity_lookup", "entity_type", "enabled"),
+        Index("ix_rules_entity_scoped", "entity_type", "entity_id"),
     )

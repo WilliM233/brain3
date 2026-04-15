@@ -20,6 +20,9 @@ import uuid
 
 import pytest
 
+from app.models import Rule
+from app.schemas.rule import RuleAction, RuleEntityType, RuleMetric, RuleOperator
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,9 +74,17 @@ class TestCreateNotification:
         )
         assert result["canned_responses"] == ["Done", "Skip", "Snooze"]
 
-    def test_create_with_all_optional_fields(self, client):
+    def test_create_with_all_optional_fields(self, client, db):
         """Create with every optional field populated."""
-        rule_id = str(uuid.uuid4())
+        rule = Rule(
+            id=uuid.uuid4(), name="test rule", entity_type=RuleEntityType.habit,
+            metric=RuleMetric.consecutive_skips, operator=RuleOperator.gte,
+            threshold=3, action=RuleAction.create_notification,
+            notification_type="habit_nudge", message_template="test",
+        )
+        db.add(rule)
+        db.commit()
+        rule_id = str(rule.id)
         result = make_notification(
             client,
             canned_responses=["Yes", "No"],
@@ -310,9 +321,17 @@ class TestListNotifications:
         assert len(results) == 1
         assert results[0]["status"] == "pending"
 
-    def test_filter_by_rule_id(self, client):
+    def test_filter_by_rule_id(self, client, db):
         """Filter by rule_id."""
-        rid = str(uuid.uuid4())
+        rule = Rule(
+            id=uuid.uuid4(), name="filter rule", entity_type=RuleEntityType.habit,
+            metric=RuleMetric.consecutive_skips, operator=RuleOperator.gte,
+            threshold=3, action=RuleAction.create_notification,
+            notification_type="habit_nudge", message_template="test",
+        )
+        db.add(rule)
+        db.commit()
+        rid = str(rule.id)
         make_notification(client, rule_id=rid)
         make_notification(client)  # no rule_id
         resp = client.get(BASE_URL, params={"rule_id": rid})

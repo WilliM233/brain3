@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Graduation evaluation, execution, frequency step-down, and re-scaffolding service."""
+"""Graduation evaluation, execution, frequency step-down,
+re-scaffolding, and stacking recommendation service."""
 
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
-from app.models import ActivityLog, Habit, HabitCompletion, NotificationQueue
+from app.models import ActivityLog, Habit, HabitCompletion, NotificationQueue, Routine
 from app.services.graduation_defaults import resolve_graduation_params
 
 
@@ -848,4 +849,266 @@ def re_scaffold_habit(
             f"(#{habit.re_scaffold_count}). "
             f"Returning to daily notifications."
         ),
+    )
+
+
+# ===========================================================================
+# [2G-05] Stacking Recommendation Engine
+# ===========================================================================
+
+STABILITY_MIN_ACCOUNTABLE_DAYS = 14
+STABILITY_NO_MISS_WINDOW_DAYS = 7
+
+
+class HabitStabilityInfo(BaseModel):
+    """Stability assessment for an accountable habit."""
+
+    habit_id: UUID
+    habit_name: str
+    scaffolding_status: str
+    notification_frequency: str
+    is_stable: bool
+    stability_detail: str
+
+
+class SuggestedHabit(BaseModel):
+    """A habit recommended for introduction into the accountability loop."""
+
+    habit_id: UUID
+    habit_name: str
+    source: str  # "queued" | "paused"
+    reason: str
+
+
+class StackingRecommendation(BaseModel):
+    """Result of evaluating a routine's readiness for a new accountable habit."""
+
+    ready: bool
+    routine_id: UUID
+    routine_name: str
+    active_accountable_habits: list[HabitStabilityInfo]
+    blocking_habits: list[HabitStabilityInfo]
+    suggested_next: SuggestedHabit | None
+    message: str
+
+
+def _assess_habit_stability(
+    db: Session,
+    habit: Habit,
+) -> HabitStabilityInfo:
+    """Assess whether an accountable habit is stable enough to allow stacking.
+
+    Uses evaluate_frequency_step_down() in read-only mode to get the current
+    "already done" rate, then applies stability criteria.
+    """
+    # Already at weekly — stable by definition (stepped down to minimum)
+    if habit.notification_frequency == "weekly":
+        return HabitStabilityInfo(
+            habit_id=habit.id,
+            habit_name=habit.title,
+            scaffolding_status=habit.scaffolding_status,
+            notification_frequency=habit.notification_frequency,
+            is_stable=True,
+            stability_detail="At minimum frequency (weekly)",
+        )
+
+    # Use step-down evaluation to get the "already done" rate
+    step_result = evaluate_frequency_step_down(db, habit.id)
+    rate = step_result.current_rate
+
+    # Stable if rate >= 60% (step-down threshold)
+    if rate >= STEP_DOWN_RATE_THRESHOLD:
+        return HabitStabilityInfo(
+            habit_id=habit.id,
+            habit_name=habit.title,
+            scaffolding_status=habit.scaffolding_status,
+            notification_frequency=habit.notification_frequency,
+            is_stable=True,
+            stability_detail=f"Step-down eligible ({rate:.0%} already-done rate)",
+        )
+
+    # Stable if accountable for 14+ days with no missed completions in last 7
+    now = datetime.now(tz=UTC)
+    if habit.introduced_at is not None:
+        days_accountable = (now.date() - habit.introduced_at).days
+        if days_accountable >= STABILITY_MIN_ACCOUNTABLE_DAYS:
+            window_start = now.date() - timedelta(
+                days=STABILITY_NO_MISS_WINDOW_DAYS,
+            )
+            completions_7d = (
+                db.query(sa_func.count(HabitCompletion.id))
+                .filter(
+                    HabitCompletion.habit_id == habit.id,
+                    HabitCompletion.completed_at >= window_start,
+                )
+                .scalar()
+            )
+            # "No missed completions" — at least one completion per day
+            # for the last 7 days
+            if completions_7d >= STABILITY_NO_MISS_WINDOW_DAYS:
+                return HabitStabilityInfo(
+                    habit_id=habit.id,
+                    habit_name=habit.title,
+                    scaffolding_status=habit.scaffolding_status,
+                    notification_frequency=habit.notification_frequency,
+                    is_stable=True,
+                    stability_detail=(
+                        f"Accountable {days_accountable} days, "
+                        f"no missed completions in last "
+                        f"{STABILITY_NO_MISS_WINDOW_DAYS} days"
+                    ),
+                )
+
+    # Not stable — blocking
+    detail_parts = [f"{rate:.0%} already-done rate"]
+    if habit.introduced_at is not None:
+        days = (now.date() - habit.introduced_at).days
+        detail_parts.append(f"{days} days accountable")
+    return HabitStabilityInfo(
+        habit_id=habit.id,
+        habit_name=habit.title,
+        scaffolding_status=habit.scaffolding_status,
+        notification_frequency=habit.notification_frequency,
+        is_stable=False,
+        stability_detail="Not yet stable: " + ", ".join(detail_parts),
+    )
+
+
+def get_stacking_recommendation(
+    db: Session,
+    routine_id: UUID,
+) -> StackingRecommendation:
+    """Evaluate whether a routine is ready for a new accountable habit.
+
+    Assesses stability of all current accountable habits, determines readiness,
+    and suggests the next habit to introduce if ready. Read-only — does not
+    modify any state.
+    """
+    routine = db.query(Routine).filter(Routine.id == routine_id).first()
+    if routine is None:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    # Load all habits in this routine
+    active_habits = (
+        db.query(Habit)
+        .filter(Habit.routine_id == routine_id, Habit.status == "active")
+        .all()
+    )
+    paused_habits = (
+        db.query(Habit)
+        .filter(Habit.routine_id == routine_id, Habit.status == "paused")
+        .all()
+    )
+
+    # Freeform routine: no habits at all
+    if not active_habits and not paused_habits:
+        return StackingRecommendation(
+            ready=True,
+            routine_id=routine_id,
+            routine_name=routine.title,
+            active_accountable_habits=[],
+            blocking_habits=[],
+            suggested_next=None,
+            message=(
+                "This is a freeform routine with no habits. "
+                "Stacking doesn't apply."
+            ),
+        )
+
+    # Assess stability of accountable habits
+    accountable_habits = [
+        h for h in active_habits if h.scaffolding_status == "accountable"
+    ]
+    stability_infos: list[HabitStabilityInfo] = []
+    blocking: list[HabitStabilityInfo] = []
+
+    for habit in accountable_habits:
+        info = _assess_habit_stability(db, habit)
+        stability_infos.append(info)
+        if not info.is_stable:
+            blocking.append(info)
+
+    # Determine readiness
+    ready = len(blocking) == 0
+
+    # No accountable habits — ready for first one
+    if not accountable_habits:
+        ready = True
+
+    # Suggest next habit if ready
+    suggested_next: SuggestedHabit | None = None
+
+    if ready:
+        # Priority 1: Paused habits with scaffolding_status='tracking',
+        # ordered by introduced_at (oldest first)
+        paused_tracking = [
+            h for h in paused_habits
+            if h.scaffolding_status == "tracking"
+        ]
+        paused_tracking.sort(
+            key=lambda h: h.introduced_at or datetime.min.date(),
+        )
+
+        if paused_tracking:
+            pick = paused_tracking[0]
+            suggested_next = SuggestedHabit(
+                habit_id=pick.id,
+                habit_name=pick.title,
+                source="paused",
+                reason=(
+                    "Previously started but paused — resuming is preferred "
+                    "over starting something new"
+                ),
+            )
+        else:
+            # Priority 2: Active tracking habits, ordered by created_at
+            # (position field not yet available — using created_at as proxy)
+            active_tracking = [
+                h for h in active_habits
+                if h.scaffolding_status == "tracking"
+            ]
+            active_tracking.sort(key=lambda h: h.created_at)
+
+            if active_tracking:
+                pick = active_tracking[0]
+                suggested_next = SuggestedHabit(
+                    habit_id=pick.id,
+                    habit_name=pick.title,
+                    source="queued",
+                    reason="Next in routine order",
+                )
+
+    # Build context-appropriate message
+    if not ready:
+        # Pick first blocking habit for message
+        blocker = blocking[0]
+        rate_str = blocker.stability_detail
+        message = (
+            f"Hold steady — {blocker.habit_name} needs more time before "
+            f"adding another habit. {rate_str}."
+        )
+    elif not accountable_habits:
+        message = (
+            f"No habits are in the accountability loop for "
+            f"{routine.title} yet. Pick one to start with."
+        )
+    elif suggested_next is not None:
+        message = (
+            f"You've been consistent with your current habits. "
+            f"Ready to add {suggested_next.habit_name} to {routine.title}?"
+        )
+    else:
+        message = (
+            f"All habits in {routine.title} are in the scaffolding "
+            f"pipeline. Nice work."
+        )
+
+    return StackingRecommendation(
+        ready=ready,
+        routine_id=routine_id,
+        routine_name=routine.title,
+        active_accountable_habits=stability_infos,
+        blocking_habits=blocking,
+        suggested_next=suggested_next,
+        message=message,
     )

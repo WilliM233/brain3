@@ -173,3 +173,14 @@ class RuleRead(BaseModel):
     last_triggered_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class RuleEvaluationResultResponse(BaseModel):
+    """API response model for a rule evaluation result."""
+
+    rule_id: UUID
+    rule_name: str
+    fired: bool
+    reason: str
+    notifications_created: int
+    entities_evaluated: int

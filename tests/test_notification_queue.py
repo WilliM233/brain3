@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models import NotificationQueue
+from app.models import NotificationQueue, Rule
+from app.schemas.rule import RuleAction, RuleEntityType, RuleMetric, RuleOperator
 
 # ---------------------------------------------------------------------------
 # Valid notification types, statuses, delivery types, and scheduled_by values
@@ -98,14 +99,21 @@ class TestNotificationQueueModel:
     def test_create_notification_with_all_fields(self, db):
         """A notification with every optional field set persists correctly."""
         now = datetime.now(timezone.utc)
-        rule_id = uuid.uuid4()
+        rule = Rule(
+            id=uuid.uuid4(), name="test rule", entity_type=RuleEntityType.habit,
+            metric=RuleMetric.consecutive_skips, operator=RuleOperator.gte,
+            threshold=3, action=RuleAction.create_notification,
+            notification_type="habit_nudge", message_template="test",
+        )
+        db.add(rule)
+        db.commit()
         n = _make_notification(
             canned_responses=["Done", "Skip", "Snooze"],
             response="Done",
             response_note="Felt good today",
             responded_at=now,
             expires_at=now,
-            rule_id=rule_id,
+            rule_id=rule.id,
         )
         result = _persist(db, n)
 
@@ -114,7 +122,7 @@ class TestNotificationQueueModel:
         assert result.response_note == "Felt good today"
         assert result.responded_at is not None
         assert result.expires_at is not None
-        assert result.rule_id == rule_id
+        assert result.rule_id == rule.id
 
     def test_nullable_fields_default_to_none(self, db):
         """Optional fields are None when not provided."""

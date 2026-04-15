@@ -46,12 +46,21 @@ class HabitCreate(BaseModel):
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None
+    friction_score: int | None = None
 
     @field_validator("graduation_target")
     @classmethod
     def validate_graduation_target(cls, v: float | None) -> float | None:
         if v is not None and (v < 0.0 or v > 1.0):
             msg = "graduation_target must be between 0.0 and 1.0"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("friction_score")
+    @classmethod
+    def validate_friction_score(cls, v: int | None) -> int | None:
+        if v is not None and (v < 1 or v > 5):
+            msg = "friction_score must be between 1 and 5"
             raise ValueError(msg)
         return v
 
@@ -79,12 +88,21 @@ class HabitUpdate(BaseModel):
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None
+    friction_score: int | None = None
 
     @field_validator("graduation_target")
     @classmethod
     def validate_graduation_target(cls, v: float | None) -> float | None:
         if v is not None and (v < 0.0 or v > 1.0):
             msg = "graduation_target must be between 0.0 and 1.0"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("friction_score")
+    @classmethod
+    def validate_friction_score(cls, v: int | None) -> int | None:
+        if v is not None and (v < 1 or v > 5):
+            msg = "friction_score must be between 1 and 5"
             raise ValueError(msg)
         return v
 
@@ -106,6 +124,9 @@ class HabitResponse(BaseModel):
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None
+    friction_score: int | None = None
+    re_scaffold_count: int
+    last_frequency_changed_at: datetime | None = None
     current_streak: int
     best_streak: int
     last_completed: date | None = None

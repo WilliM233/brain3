@@ -30,6 +30,7 @@ from app.routers import (
     directives,
     domains,
     goals,
+    graduation,
     habits,
     notification,
     projects,
@@ -105,6 +106,12 @@ app.include_router(
     notification.router, prefix="/api/notifications", tags=["Notifications"],
 )
 app.include_router(rules.router, prefix="/api/rules", tags=["Rules"])
+app.include_router(
+    graduation.habit_graduation_router, prefix="/api/habits", tags=["Graduation"],
+)
+app.include_router(
+    graduation.graduation_router, prefix="/api/graduation", tags=["Graduation"],
+)
 app.include_router(
     skills.skill_domains_router, prefix="/api/skills", tags=["Skill Domains"],
 )

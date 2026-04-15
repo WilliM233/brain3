@@ -21,21 +21,17 @@ idempotent seeding, and API filter support.
 """
 
 import json
-import uuid
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from app.models import Rule
 from app.schemas.rule import (
-    ALLOWED_PLACEHOLDERS,
     RuleAction,
     RuleCreate,
     RuleEntityType,
     RuleMetric,
     RuleOperator,
-    RuleRead,
     validate_message_template,
 )
 

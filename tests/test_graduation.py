@@ -21,8 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.models import Habit, NotificationQueue
-from app.models import ActivityLog
+from app.models import ActivityLog, Habit, NotificationQueue
 from app.services.graduation import (
     GraduationExecutionResult,
     GraduationResult,

@@ -60,6 +60,7 @@ def list_rules(
     enabled: bool | None = Query(None),
     notification_type: NotificationType | None = Query(None),
     entity_id: UUID | None = Query(None),
+    is_default: bool | None = Query(None),
     db: Session = Depends(get_db),
 ) -> list[Rule]:
     """List rules with composable filters (AND logic)."""
@@ -73,6 +74,8 @@ def list_rules(
         query = query.filter(Rule.notification_type == notification_type)
     if entity_id is not None:
         query = query.filter(Rule.entity_id == entity_id)
+    if is_default is not None:
+        query = query.filter(Rule.is_default == is_default)
 
     return query.order_by(Rule.created_at.desc()).all()
 

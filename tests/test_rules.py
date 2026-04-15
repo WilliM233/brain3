@@ -195,21 +195,21 @@ class TestRuleModel:
     def test_all_entity_types_persist(self, db):
         """Each RuleEntityType value round-trips."""
         for et in RuleEntityType:
-            rule = _make_rule(id=uuid.uuid4(), entity_type=et)
+            rule = _make_rule(id=uuid.uuid4(), name=f"Rule {et.value}", entity_type=et)
             persisted = _persist(db, rule)
             assert persisted.entity_type == et
 
     def test_all_metrics_persist(self, db):
         """Each RuleMetric value round-trips."""
         for m in RuleMetric:
-            rule = _make_rule(id=uuid.uuid4(), metric=m)
+            rule = _make_rule(id=uuid.uuid4(), name=f"Rule {m.value}", metric=m)
             persisted = _persist(db, rule)
             assert persisted.metric == m
 
     def test_all_operators_persist(self, db):
         """Each RuleOperator value round-trips."""
         for op in RuleOperator:
-            rule = _make_rule(id=uuid.uuid4(), operator=op)
+            rule = _make_rule(id=uuid.uuid4(), name=f"Rule {op.value}", operator=op)
             persisted = _persist(db, rule)
             assert persisted.operator == op
 

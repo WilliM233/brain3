@@ -1035,6 +1035,9 @@ class Rule(Base):
     cooldown_hours: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("24"),
     )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"),
+    )
     last_triggered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
@@ -1054,6 +1057,7 @@ class Rule(Base):
             ")",
             name="ck_rules_notification_type",
         ),
+        UniqueConstraint("name", name="uq_rules_name"),
         Index("ix_rules_entity_lookup", "entity_type", "enabled"),
         Index("ix_rules_entity_scoped", "entity_type", "entity_id"),
     )

@@ -121,6 +121,7 @@ class RuleCreate(BaseModel):
     message_template: str = Field(min_length=1)
     enabled: bool = True
     cooldown_hours: int = 24
+    is_default: bool = False
 
     @field_validator("message_template")
     @classmethod
@@ -168,6 +169,7 @@ class RuleRead(BaseModel):
     message_template: str
     enabled: bool
     cooldown_hours: int
+    is_default: bool
     last_triggered_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

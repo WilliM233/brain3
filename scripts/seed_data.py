@@ -39,8 +39,9 @@ import httpx
 DEFAULT_API_URL = "http://localhost:8000"
 SEEDS_DIR = Path(__file__).parent / "seeds"
 
-# Load order matters — skills reference protocols and directives by name
-ENTITY_ORDER = ["protocols", "directives", "skills"]
+# Load order matters — skills reference protocols and directives by name.
+# Rules are independent and loaded last.
+ENTITY_ORDER = ["protocols", "directives", "skills", "rules"]
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -72,7 +73,7 @@ def load_seed_file(entity_type: str) -> dict:
     if not path.exists():
         print(f"  WARNING: Seed file not found: {path}")
         return {"items": []}
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -177,23 +178,41 @@ def load_entity_type(
 
         to_create.append(item)
 
-    # Batch create all new items at once
+    # Create new items — batch endpoint for most types, individual for rules
     if to_create and not dry_run:
-        try:
-            resp = client.post(
-                f"{api_url}/api/{entity_type}/batch",
-                json={"items": to_create},
-            )
-            resp.raise_for_status()
-            result = resp.json()
-            batch_count = result.get("count", len(to_create))
+        if entity_type == "rules":
             for item in to_create:
-                print(f"    CREATED: {item['name']}")
-            created += batch_count
-        except httpx.HTTPStatusError as exc:
-            error_msg = f"    ERROR in batch create: {exc.response.text}"
-            print(error_msg)
-            errors.append(error_msg)
+                try:
+                    resp = client.post(
+                        f"{api_url}/api/{entity_type}",
+                        json=item,
+                    )
+                    resp.raise_for_status()
+                    print(f"    CREATED: {item['name']}")
+                    created += 1
+                except httpx.HTTPStatusError as exc:
+                    error_msg = (
+                        f"    ERROR creating '{item['name']}': "
+                        f"{exc.response.text}"
+                    )
+                    print(error_msg)
+                    errors.append(error_msg)
+        else:
+            try:
+                resp = client.post(
+                    f"{api_url}/api/{entity_type}/batch",
+                    json={"items": to_create},
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                batch_count = result.get("count", len(to_create))
+                for item in to_create:
+                    print(f"    CREATED: {item['name']}")
+                created += batch_count
+            except httpx.HTTPStatusError as exc:
+                error_msg = f"    ERROR in batch create: {exc.response.text}"
+                print(error_msg)
+                errors.append(error_msg)
 
     return created, skipped, errors
 

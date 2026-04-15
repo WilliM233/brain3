@@ -1,0 +1,60 @@
+{
+  "items": [
+    {
+      "name": "Consecutive skip alert",
+      "entity_type": "habit",
+      "entity_id": null,
+      "metric": "consecutive_skips",
+      "operator": ">=",
+      "threshold": 5,
+      "action": "create_notification",
+      "notification_type": "pattern_observation",
+      "message_template": "You've skipped {entity_name} {metric_value} times in a row. Want to talk about what's getting in the way?",
+      "enabled": true,
+      "cooldown_hours": 72,
+      "is_default": true
+    },
+    {
+      "name": "Non-response alert",
+      "entity_type": "habit",
+      "entity_id": null,
+      "metric": "non_responses",
+      "operator": ">=",
+      "threshold": 3,
+      "action": "create_notification",
+      "notification_type": "pattern_observation",
+      "message_template": "{entity_name} has had {metric_value} notifications with no response. Are the notifications reaching you at the right time?",
+      "enabled": true,
+      "cooldown_hours": 48,
+      "is_default": true
+    },
+    {
+      "name": "Stale task nudge",
+      "entity_type": "task",
+      "entity_id": null,
+      "metric": "days_untouched",
+      "operator": ">=",
+      "threshold": 14,
+      "action": "create_notification",
+      "notification_type": "stale_work_nudge",
+      "message_template": "{entity_name} hasn't been touched in {metric_value} days. Still on your radar?",
+      "enabled": true,
+      "cooldown_hours": 168,
+      "is_default": true
+    },
+    {
+      "name": "Streak break notice",
+      "entity_type": "habit",
+      "entity_id": null,
+      "metric": "streak_length",
+      "operator": ">=",
+      "threshold": 7,
+      "action": "create_notification",
+      "notification_type": "pattern_observation",
+      "message_template": "Your {entity_name} streak of {metric_value} days just ended. That's still real progress — want to restart?",
+      "enabled": true,
+      "cooldown_hours": 168,
+      "is_default": true
+    }
+  ]
+}

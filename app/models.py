@@ -486,6 +486,13 @@ class Habit(Base):
         Numeric(precision=3, scale=2), default=0.85,
     )
     graduation_threshold: Mapped[int | None] = mapped_column(Integer, default=30)
+    friction_score: Mapped[int | None] = mapped_column(Integer)
+    re_scaffold_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"),
+    )
+    last_frequency_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
     current_streak: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"),
     )
@@ -518,6 +525,10 @@ class Habit(Base):
         CheckConstraint(
             "scaffolding_status IN ('tracking', 'accountable', 'graduated')",
             name="ck_habits_scaffolding_status",
+        ),
+        CheckConstraint(
+            "friction_score IS NULL OR (friction_score >= 1 AND friction_score <= 5)",
+            name="ck_habits_friction_score",
         ),
         Index("ix_habits_status", "status"),
         Index("ix_habits_routine_id", "routine_id"),

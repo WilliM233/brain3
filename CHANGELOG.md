@@ -4,6 +4,12 @@ All notable changes to BRAIN 3.0 will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v1.3.0] — Rules Engine (Phase 2 Stream F)
+
+### Added
+- Rules table model, migration, enum definitions (RuleEntityType, RuleMetric, RuleOperator, RuleAction), FK on notification_queue.rule_id with SET NULL cascade, Pydantic schemas with template placeholder validation (#140)
+- Rules CRUD endpoints — create, list (composable filters: entity_type, enabled, notification_type, entity_id), get, update, delete (#141)
+
 ## [v1.2.0] — The Knowledge Layer
 
 ### Added

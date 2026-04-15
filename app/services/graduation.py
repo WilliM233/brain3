@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Graduation evaluation, execution, and frequency step-down service for habit scaffolding."""
+"""Graduation evaluation, execution, frequency step-down, and re-scaffolding service."""
 
 from __future__ import annotations
 
@@ -23,9 +23,10 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
-from app.models import ActivityLog, Habit, NotificationQueue
+from app.models import ActivityLog, Habit, HabitCompletion, NotificationQueue
 from app.services.graduation_defaults import resolve_graduation_params
 
 
@@ -535,5 +536,316 @@ def apply_frequency_step_down(
         message=(
             f"Frequency stepped down for '{habit.title}': "
             f"{previous} → {new_frequency}"
+        ),
+    )
+
+
+# ===========================================================================
+# [2G-04] Slip Detection & Re-Scaffolding
+# ===========================================================================
+
+# Detection window and thresholds
+SLIP_DETECTION_WINDOW_DAYS = 14
+CHECKLIST_WARNING_THRESHOLD = 3
+CHECKLIST_CRITICAL_THRESHOLD = 5
+COMPLETION_WARNING_DAYS = 7  # 0 completions in this many days → warning
+COMPLETION_CRITICAL_DAYS = 14  # 0 completions in this many days → critical
+
+
+class SlipSignal(BaseModel):
+    """A single signal indicating potential habit regression."""
+
+    signal_type: str  # "missed_in_checklist" | "no_completion_recorded"
+    detail: str
+    severity: str  # "warning" | "critical"
+
+
+class SlipDetectionResult(BaseModel):
+    """Result of evaluating a graduated habit for slip signals."""
+
+    slip_detected: bool
+    habit_id: UUID
+    habit_name: str
+    slip_signals: list[SlipSignal]
+    recommendation: str  # "re_scaffold" | "monitor" | "no_action"
+    days_since_graduation: int
+    message: str
+
+
+class ReScaffoldResult(BaseModel):
+    """Result of executing a habit re-scaffolding."""
+
+    success: bool
+    habit_id: UUID
+    previous_scaffolding_status: str
+    previous_notification_frequency: str
+    new_notification_frequency: str
+    re_scaffold_count: int
+    tightened_params: dict
+    message: str
+
+
+def evaluate_graduated_habit_slip(
+    db: Session,
+    habit_id: UUID,
+) -> SlipDetectionResult:
+    """Evaluate whether a graduated habit is showing signs of regression.
+
+    Read-only — returns recommendations but does not trigger re-scaffolding.
+    The caller decides what to do with the result.
+    """
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if habit is None:
+        raise ValueError(f"Habit {habit_id} not found")
+
+    # Gate: only graduated habits are evaluated for slip
+    if habit.scaffolding_status != "graduated":
+        return SlipDetectionResult(
+            slip_detected=False,
+            habit_id=habit_id,
+            habit_name=habit.title,
+            slip_signals=[],
+            recommendation="no_action",
+            days_since_graduation=0,
+            message="Habit is not graduated — slip detection does not apply",
+        )
+
+    now = datetime.now(tz=UTC)
+    window_start = now - timedelta(days=SLIP_DETECTION_WINDOW_DAYS)
+
+    # Compute days since graduation (approximate — use updated_at as proxy
+    # since we don't have a dedicated graduated_at column)
+    days_since_graduation = 0
+    if habit.updated_at is not None:
+        updated = habit.updated_at
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=UTC)
+        days_since_graduation = (now - updated).days
+
+    signals: list[SlipSignal] = []
+
+    # Signal 1: Missed in routine checklists (only for habits with a routine)
+    if habit.routine_id is not None:
+        checklist_notifications = (
+            db.query(NotificationQueue)
+            .filter(
+                NotificationQueue.target_entity_type == "routine",
+                NotificationQueue.target_entity_id == habit.routine_id,
+                NotificationQueue.notification_type == "routine_checklist",
+                NotificationQueue.scheduled_at >= window_start,
+                NotificationQueue.status.in_(["responded", "expired"]),
+            )
+            .all()
+        )
+
+        miss_count = sum(
+            1 for n in checklist_notifications
+            if n.response == "Partial" or n.status == "expired"
+        )
+
+        if miss_count >= CHECKLIST_CRITICAL_THRESHOLD:
+            signals.append(SlipSignal(
+                signal_type="missed_in_checklist",
+                detail=(
+                    f"{miss_count} partial/expired routine checklists in "
+                    f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
+                ),
+                severity="critical",
+            ))
+        elif miss_count >= CHECKLIST_WARNING_THRESHOLD:
+            signals.append(SlipSignal(
+                signal_type="missed_in_checklist",
+                detail=(
+                    f"{miss_count} partial/expired routine checklists in "
+                    f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
+                ),
+                severity="warning",
+            ))
+
+    # Signal 2: No completion recorded
+    window_7 = now - timedelta(days=COMPLETION_WARNING_DAYS)
+
+    completions_14d = (
+        db.query(sa_func.count(HabitCompletion.id))
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.completed_at >= window_start.date(),
+        )
+        .scalar()
+    )
+
+    if completions_14d == 0:
+        # Zero completions in full 14-day window → critical
+        signals.append(SlipSignal(
+            signal_type="no_completion_recorded",
+            detail=(
+                f"No completions recorded in the last "
+                f"{SLIP_DETECTION_WINDOW_DAYS} days"
+            ),
+            severity="critical",
+        ))
+    else:
+        completions_7d = (
+            db.query(sa_func.count(HabitCompletion.id))
+            .filter(
+                HabitCompletion.habit_id == habit_id,
+                HabitCompletion.completed_at >= window_7.date(),
+            )
+            .scalar()
+        )
+
+        if completions_7d == 0:
+            # Zero completions in last 7 days but some in 14-day window → warning
+            signals.append(SlipSignal(
+                signal_type="no_completion_recorded",
+                detail=(
+                    f"No completions in the last {COMPLETION_WARNING_DAYS} days "
+                    f"(last completion was more than a week ago)"
+                ),
+                severity="warning",
+            ))
+
+    # Determine recommendation
+    has_critical = any(s.severity == "critical" for s in signals)
+    has_warning = any(s.severity == "warning" for s in signals)
+
+    if has_critical:
+        recommendation = "re_scaffold"
+    elif has_warning:
+        recommendation = "monitor"
+    else:
+        recommendation = "no_action"
+
+    # Build human-readable message
+    if recommendation == "re_scaffold":
+        message = (
+            f"Habit '{habit.title}' is showing critical signs of regression. "
+            f"Re-scaffolding recommended."
+        )
+    elif recommendation == "monitor":
+        message = (
+            f"Habit '{habit.title}' has early warning signs of slipping. "
+            f"Monitor during next session."
+        )
+    else:
+        message = f"Habit '{habit.title}' is holding steady after graduation."
+
+    return SlipDetectionResult(
+        slip_detected=len(signals) > 0,
+        habit_id=habit_id,
+        habit_name=habit.title,
+        slip_signals=signals,
+        recommendation=recommendation,
+        days_since_graduation=days_since_graduation,
+        message=message,
+    )
+
+
+def evaluate_all_graduated_habits(
+    db: Session,
+) -> list[SlipDetectionResult]:
+    """Evaluate all active graduated habits for slip signals.
+
+    Returns only habits that need attention (recommendation != 'no_action').
+    This is the function the scheduler calls periodically.
+    """
+    habits = (
+        db.query(Habit)
+        .filter(
+            Habit.scaffolding_status == "graduated",
+            Habit.status == "active",
+        )
+        .all()
+    )
+
+    results = []
+    for habit in habits:
+        result = evaluate_graduated_habit_slip(db, habit.id)
+        if result.recommendation != "no_action":
+            results.append(result)
+    return results
+
+
+def re_scaffold_habit(
+    db: Session,
+    habit_id: UUID,
+) -> ReScaffoldResult:
+    """Execute re-scaffolding: reverse graduation and return to daily notifications.
+
+    Increments re_scaffold_count so future graduation criteria are tightened.
+    Does NOT reset streaks — historical achievement is preserved.
+    """
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if habit is None:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    if habit.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot re-scaffold a habit with status '{habit.status}' — must be 'active'",
+        )
+
+    if habit.scaffolding_status != "graduated":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot re-scaffold from scaffolding_status '{habit.scaffolding_status}' "
+                "— must be 'graduated'"
+            ),
+        )
+
+    # Snapshot previous values
+    previous_scaffolding = habit.scaffolding_status
+    previous_frequency = habit.notification_frequency
+
+    # Reverse graduation
+    habit.scaffolding_status = "accountable"
+    habit.notification_frequency = "daily"
+
+    # Increment re-scaffold count
+    habit.re_scaffold_count += 1
+
+    # Reset cooldown timer
+    habit.last_frequency_changed_at = datetime.now(tz=UTC)
+
+    # Compute tightened criteria for informational purposes
+    window, target, threshold = resolve_graduation_params(habit)
+    window, target, threshold = apply_re_scaffold_tightening(
+        window, target, threshold, habit.re_scaffold_count,
+    )
+    tightened_params = {
+        "window_days": window,
+        "target_rate": target,
+        "threshold_days": threshold,
+    }
+
+    # Log activity entry
+    activity = ActivityLog(
+        action_type="reflected",
+        notes=(
+            f"Habit re-scaffolded: {habit.title} "
+            f"(re-scaffold #{habit.re_scaffold_count}). "
+            f"Returning to daily notifications. "
+            f"Next graduation requires: {window}d window, "
+            f"{target:.0%} rate, {threshold}d minimum."
+        ),
+        habit_id=habit_id,
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(habit)
+
+    return ReScaffoldResult(
+        success=True,
+        habit_id=habit_id,
+        previous_scaffolding_status=previous_scaffolding,
+        previous_notification_frequency=previous_frequency,
+        new_notification_frequency="daily",
+        re_scaffold_count=habit.re_scaffold_count,
+        tightened_params=tightened_params,
+        message=(
+            f"Habit '{habit.title}' re-scaffolded "
+            f"(#{habit.re_scaffold_count}). "
+            f"Returning to daily notifications."
         ),
     )

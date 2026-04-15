@@ -21,18 +21,30 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.models import ActivityLog, Habit, NotificationQueue
+from app.models import (
+    ActivityLog,
+    Domain,
+    Habit,
+    HabitCompletion,
+    NotificationQueue,
+    Routine,
+)
 from app.services.graduation import (
     FrequencyChangeResult,
     FrequencyStepResult,
     GraduationExecutionResult,
     GraduationResult,
+    ReScaffoldResult,
+    SlipDetectionResult,
     apply_frequency_step_down,
     apply_re_scaffold_tightening,
+    evaluate_all_graduated_habits,
     evaluate_frequency_step_down,
+    evaluate_graduated_habit_slip,
     evaluate_graduation,
     graduate_habit,
     next_step_down,
+    re_scaffold_habit,
 )
 from app.services.graduation_defaults import resolve_graduation_params
 from tests.conftest import make_habit
@@ -78,6 +90,55 @@ def _create_habit(db, **overrides) -> Habit:
 
     db.refresh(habit)
     return habit
+
+
+def _create_routine(db) -> Routine:
+    """Insert a Domain + Routine and return the Routine."""
+    domain = Domain(id=uuid.uuid4(), name="Test Domain")
+    db.add(domain)
+    db.commit()
+    routine = Routine(
+        id=uuid.uuid4(),
+        domain_id=domain.id,
+        title="Test Routine",
+        frequency="daily",
+    )
+    db.add(routine)
+    db.commit()
+    return routine
+
+
+def _create_completion(db, habit_id: uuid.UUID, days_ago: int = 0) -> HabitCompletion:
+    """Insert a habit completion record."""
+    c = HabitCompletion(
+        id=uuid.uuid4(),
+        habit_id=habit_id,
+        completed_at=date.today() - timedelta(days=days_ago),
+        source="individual",
+    )
+    db.add(c)
+    db.commit()
+    return c
+
+
+def _create_routine_checklist(db, routine_id: uuid.UUID, response: str | None,
+                              status: str, days_ago: int = 5) -> NotificationQueue:
+    """Insert a routine_checklist notification for a routine."""
+    n = NotificationQueue(
+        id=uuid.uuid4(),
+        notification_type="routine_checklist",
+        delivery_type="notification",
+        status=status,
+        scheduled_at=datetime.now(tz=UTC) - timedelta(days=days_ago),
+        target_entity_type="routine",
+        target_entity_id=routine_id,
+        message="Routine checklist time!",
+        response=response,
+        scheduled_by="system",
+    )
+    db.add(n)
+    db.commit()
+    return n
 
 
 def _create_notification(db, habit_id: uuid.UUID, response: str | None,
@@ -1135,3 +1196,529 @@ class TestManualFrequencyOverrideCooldown:
 
         assert result.cooldown_active is True
         assert result.recommend_step_down is False
+
+
+# ===========================================================================
+# [2G-04] evaluate_graduated_habit_slip
+# ===========================================================================
+
+
+class TestEvaluateGraduatedHabitSlip:
+    """Tests for slip detection on graduated habits."""
+
+    def _graduated_habit(self, db, *, routine_id=None, **overrides) -> Habit:
+        """Create a graduated habit."""
+        defaults = {
+            "scaffolding_status": "graduated",
+            "notification_frequency": "graduated",
+            "status": "active",
+            "introduced_at": date.today() - timedelta(days=90),
+            "routine_id": routine_id,
+        }
+        defaults.update(overrides)
+        return _create_habit(db, **defaults)
+
+    # --- No slip ---
+
+    def test_no_slip_with_recent_completions(self, db):
+        """Graduated habit with recent completions shows no slip."""
+        habit = self._graduated_habit(db)
+        # Completions in the last 7 days
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 1)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert isinstance(result, SlipDetectionResult)
+        assert result.slip_detected is False
+        assert result.recommendation == "no_action"
+        assert result.slip_signals == []
+        assert "holding steady" in result.message
+
+    def test_no_action_for_non_graduated_habit(self, db):
+        """Accountable habit returns no_action — slip detection only applies to graduated."""
+        habit = _create_habit(db, scaffolding_status="accountable")
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is False
+        assert result.recommendation == "no_action"
+        assert "not graduated" in result.message
+
+    def test_nonexistent_habit_raises(self, db):
+        """Evaluating a nonexistent habit raises ValueError."""
+        with pytest.raises(ValueError, match="not found"):
+            evaluate_graduated_habit_slip(db, uuid.uuid4())
+
+    # --- Signal 2: No completion recorded (standalone habit) ---
+
+    def test_warning_no_completions_7_days(self, db):
+        """0 completions in last 7 days but some in 14-day window → warning."""
+        habit = self._graduated_habit(db)
+        # Completion 10 days ago (within 14-day window, outside 7-day window)
+        _create_completion(db, habit.id, days_ago=10)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        assert result.recommendation == "monitor"
+        assert len(result.slip_signals) == 1
+        signal = result.slip_signals[0]
+        assert signal.signal_type == "no_completion_recorded"
+        assert signal.severity == "warning"
+
+    def test_critical_no_completions_14_days(self, db):
+        """0 completions in 14 days → critical."""
+        habit = self._graduated_habit(db)
+        # No completions at all
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        assert result.recommendation == "re_scaffold"
+        assert len(result.slip_signals) == 1
+        signal = result.slip_signals[0]
+        assert signal.signal_type == "no_completion_recorded"
+        assert signal.severity == "critical"
+        assert "Re-scaffolding recommended" in result.message
+
+    def test_no_warning_with_recent_completions_within_7_days(self, db):
+        """Completions within 7 days → no completion signal."""
+        habit = self._graduated_habit(db)
+        _create_completion(db, habit.id, days_ago=3)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is False
+        assert result.recommendation == "no_action"
+
+    # --- Signal 1: Missed in routine checklists ---
+
+    def test_standalone_habit_only_signal_2(self, db):
+        """Standalone habits (no routine) only evaluate Signal 2."""
+        habit = self._graduated_habit(db, routine_id=None)
+        _create_completion(db, habit.id, days_ago=2)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is False
+        # No checklist signals even if we somehow had checklist notifications
+        assert all(
+            s.signal_type != "missed_in_checklist" for s in result.slip_signals
+        )
+
+    def test_checklist_warning_3_misses(self, db):
+        """3 partial/expired routine checklists in 14 days → warning signal."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        # Recent completions to avoid Signal 2
+        for i in range(3):
+            _create_completion(db, habit.id, days_ago=i + 1)
+        # 3 partial checklist responses
+        for i in range(3):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        assert result.recommendation == "monitor"
+        checklist_signals = [
+            s for s in result.slip_signals if s.signal_type == "missed_in_checklist"
+        ]
+        assert len(checklist_signals) == 1
+        assert checklist_signals[0].severity == "warning"
+
+    def test_checklist_critical_5_misses(self, db):
+        """5+ partial/expired routine checklists in 14 days → critical signal."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        # Recent completions to avoid Signal 2
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 1)
+        # 5 partial/expired checklist responses
+        for i in range(3):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+        for i in range(2):
+            _create_routine_checklist(
+                db, routine.id, None, "expired", days_ago=i + 4,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        checklist_signals = [
+            s for s in result.slip_signals if s.signal_type == "missed_in_checklist"
+        ]
+        assert len(checklist_signals) == 1
+        assert checklist_signals[0].severity == "critical"
+        assert result.recommendation == "re_scaffold"
+
+    def test_checklist_2_misses_no_signal(self, db):
+        """Only 2 misses — below threshold, no signal."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        for i in range(3):
+            _create_completion(db, habit.id, days_ago=i + 1)
+        for i in range(2):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        checklist_signals = [
+            s for s in result.slip_signals if s.signal_type == "missed_in_checklist"
+        ]
+        assert len(checklist_signals) == 0
+
+    def test_expired_checklists_count_as_misses(self, db):
+        """Expired (unanswered) routine checklists count toward miss threshold."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        for i in range(3):
+            _create_completion(db, habit.id, days_ago=i + 1)
+        # 3 expired checklists
+        for i in range(3):
+            _create_routine_checklist(
+                db, routine.id, None, "expired", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        checklist_signals = [
+            s for s in result.slip_signals if s.signal_type == "missed_in_checklist"
+        ]
+        assert len(checklist_signals) == 1
+        assert checklist_signals[0].severity == "warning"
+
+    # --- Combined signals ---
+
+    def test_critical_from_both_signals(self, db):
+        """Both critical signals present → re_scaffold recommendation."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        # No completions (Signal 2 critical)
+        # 5 partial checklists (Signal 1 critical)
+        for i in range(5):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        assert result.recommendation == "re_scaffold"
+        assert len(result.slip_signals) == 2
+
+    def test_monitor_with_only_warnings(self, db):
+        """Warning-only signals → monitor recommendation."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        # Completion 10 days ago (Signal 2 warning)
+        _create_completion(db, habit.id, days_ago=10)
+        # 3 partial checklists (Signal 1 warning)
+        for i in range(3):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.slip_detected is True
+        assert result.recommendation == "monitor"
+        assert len(result.slip_signals) == 2
+
+    def test_critical_overrides_warning(self, db):
+        """If any signal is critical, recommendation is re_scaffold even if others are warning."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        # No completions → critical (Signal 2)
+        # 3 partial checklists → warning only (Signal 1)
+        for i in range(3):
+            _create_routine_checklist(
+                db, routine.id, "Partial", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        assert result.recommendation == "re_scaffold"
+        severities = {s.severity for s in result.slip_signals}
+        assert "critical" in severities
+        assert "warning" in severities
+
+    def test_completed_checklists_not_counted(self, db):
+        """Checklists with response='Complete' or status='responded' (not Partial) don't count."""
+        routine = _create_routine(db)
+        habit = self._graduated_habit(db, routine_id=routine.id)
+        for i in range(3):
+            _create_completion(db, habit.id, days_ago=i + 1)
+        # 5 complete checklists — should NOT trigger
+        for i in range(5):
+            _create_routine_checklist(
+                db, routine.id, "Complete", "responded", days_ago=i + 1,
+            )
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+
+        checklist_signals = [
+            s for s in result.slip_signals if s.signal_type == "missed_in_checklist"
+        ]
+        assert len(checklist_signals) == 0
+
+
+# ===========================================================================
+# [2G-04] evaluate_all_graduated_habits
+# ===========================================================================
+
+
+class TestEvaluateAllGraduatedHabits:
+
+    def test_returns_only_actionable(self, db):
+        """Only habits with recommendation != 'no_action' are returned."""
+        # Graduated habit with recent completions (no slip)
+        good = _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+            status="active", introduced_at=date.today() - timedelta(days=90),
+        )
+        for i in range(5):
+            _create_completion(db, good.id, days_ago=i + 1)
+
+        # Graduated habit with no completions (critical slip)
+        bad = _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+            status="active", introduced_at=date.today() - timedelta(days=90),
+            title="Slipping Habit",
+        )
+
+        results = evaluate_all_graduated_habits(db)
+
+        assert len(results) == 1
+        assert results[0].habit_id == bad.id
+        assert results[0].recommendation == "re_scaffold"
+
+    def test_excludes_non_graduated(self, db):
+        """Accountable and tracking habits are not evaluated."""
+        _create_habit(
+            db, scaffolding_status="accountable", status="active",
+        )
+        _create_habit(
+            db, scaffolding_status="tracking", status="active",
+        )
+
+        results = evaluate_all_graduated_habits(db)
+
+        assert results == []
+
+    def test_excludes_inactive(self, db):
+        """Paused graduated habits are not evaluated."""
+        _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+            status="paused",
+        )
+
+        results = evaluate_all_graduated_habits(db)
+
+        assert results == []
+
+    def test_empty_when_no_graduated(self, db):
+        """No graduated habits → empty list."""
+        results = evaluate_all_graduated_habits(db)
+
+        assert results == []
+
+    def test_multiple_slipping_habits(self, db):
+        """Multiple slipping habits all appear in results."""
+        for i in range(3):
+            _create_habit(
+                db, scaffolding_status="graduated",
+                notification_frequency="graduated",
+                status="active",
+                introduced_at=date.today() - timedelta(days=90),
+                title=f"Slipping {i}",
+            )
+
+        results = evaluate_all_graduated_habits(db)
+
+        assert len(results) == 3
+
+
+# ===========================================================================
+# [2G-04] re_scaffold_habit
+# ===========================================================================
+
+
+class TestReScaffoldHabit:
+
+    def _graduated_habit(self, db, **overrides) -> Habit:
+        """Create a graduated, active habit."""
+        defaults = {
+            "scaffolding_status": "graduated",
+            "notification_frequency": "graduated",
+            "status": "active",
+            "introduced_at": date.today() - timedelta(days=90),
+            "friction_score": 1,
+            "graduation_window": None,
+            "graduation_target": None,
+            "graduation_threshold": None,
+        }
+        defaults.update(overrides)
+        return _create_habit(db, **defaults)
+
+    # --- Successful re-scaffold ---
+
+    def test_successful_re_scaffold(self, db):
+        """Re-scaffold transitions status and frequency correctly."""
+        habit = self._graduated_habit(db)
+
+        result = re_scaffold_habit(db, habit.id)
+
+        assert isinstance(result, ReScaffoldResult)
+        assert result.success is True
+        assert result.previous_scaffolding_status == "graduated"
+        assert result.previous_notification_frequency == "graduated"
+        assert result.new_notification_frequency == "daily"
+        assert result.re_scaffold_count == 1
+
+        db.refresh(habit)
+        assert habit.scaffolding_status == "accountable"
+        assert habit.notification_frequency == "daily"
+
+    def test_re_scaffold_increments_count(self, db):
+        """re_scaffold_count is incremented."""
+        habit = self._graduated_habit(db)
+        assert habit.re_scaffold_count == 0
+
+        result = re_scaffold_habit(db, habit.id)
+
+        assert result.re_scaffold_count == 1
+        db.refresh(habit)
+        assert habit.re_scaffold_count == 1
+
+    def test_re_scaffold_resets_cooldown(self, db):
+        """last_frequency_changed_at is set on re-scaffold."""
+        habit = self._graduated_habit(db)
+        assert habit.last_frequency_changed_at is None
+
+        before = datetime.now(tz=UTC)
+        re_scaffold_habit(db, habit.id)
+        db.refresh(habit)
+
+        assert habit.last_frequency_changed_at is not None
+        changed_at = habit.last_frequency_changed_at
+        if changed_at.tzinfo is None:
+            changed_at = changed_at.replace(tzinfo=UTC)
+        assert changed_at >= before
+
+    def test_re_scaffold_preserves_streaks(self, db):
+        """best_streak and last_completed are NOT reset."""
+        habit = self._graduated_habit(db)
+        habit.best_streak = 21
+        habit.last_completed = date.today() - timedelta(days=3)
+        db.commit()
+        db.refresh(habit)
+
+        re_scaffold_habit(db, habit.id)
+        db.refresh(habit)
+
+        assert habit.best_streak == 21
+        assert habit.last_completed == date.today() - timedelta(days=3)
+
+    def test_tightened_params_in_result(self, db):
+        """Result includes correctly computed tightened graduation criteria."""
+        habit = self._graduated_habit(db, friction_score=1)
+
+        result = re_scaffold_habit(db, habit.id)
+
+        # Friction-1 base: (30, 0.85, 30) → 1 re-scaffold: (37, 0.90, 37)
+        assert result.tightened_params["window_days"] == 37
+        assert result.tightened_params["target_rate"] == pytest.approx(0.90)
+        assert result.tightened_params["threshold_days"] == 37
+
+    def test_activity_log_created(self, db):
+        """Re-scaffold creates an activity log with action_type='reflected'."""
+        habit = self._graduated_habit(db)
+
+        re_scaffold_habit(db, habit.id)
+
+        log = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.habit_id == habit.id)
+            .first()
+        )
+        assert log is not None
+        assert log.action_type == "reflected"
+        assert "re-scaffolded" in log.notes
+        assert habit.title in log.notes
+        assert "#1" in log.notes
+        assert "daily" in log.notes.lower()
+
+    # --- Double re-scaffold (compounded tightening) ---
+
+    def test_double_re_scaffold(self, db):
+        """Second re-scaffold compounds tightening correctly."""
+        habit = self._graduated_habit(db, friction_score=1)
+
+        # First re-scaffold
+        result1 = re_scaffold_habit(db, habit.id)
+        assert result1.re_scaffold_count == 1
+
+        # Simulate re-graduation (set back to graduated)
+        habit.scaffolding_status = "graduated"
+        habit.notification_frequency = "graduated"
+        db.commit()
+        db.refresh(habit)
+
+        # Second re-scaffold
+        result2 = re_scaffold_habit(db, habit.id)
+
+        assert result2.re_scaffold_count == 2
+        # Friction-1: (30, 0.85, 30) → 2x tightening: (46, 0.95, 46)
+        assert result2.tightened_params["window_days"] == 46
+        assert result2.tightened_params["target_rate"] == pytest.approx(0.95)
+        assert result2.tightened_params["threshold_days"] == 46
+
+        db.refresh(habit)
+        assert habit.scaffolding_status == "accountable"
+        assert habit.notification_frequency == "daily"
+
+    # --- Rejection cases ---
+
+    def test_reject_non_graduated(self, db):
+        """Cannot re-scaffold a non-graduated habit."""
+        habit = _create_habit(db, scaffolding_status="accountable", status="active")
+
+        with pytest.raises(Exception) as exc_info:
+            re_scaffold_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "accountable" in exc_info.value.detail
+
+    def test_reject_paused(self, db):
+        """Cannot re-scaffold a paused habit."""
+        habit = _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+            status="paused",
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            re_scaffold_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "paused" in exc_info.value.detail
+
+    def test_reject_tracking(self, db):
+        """Cannot re-scaffold a tracking habit."""
+        habit = _create_habit(db, scaffolding_status="tracking", status="active")
+
+        with pytest.raises(Exception) as exc_info:
+            re_scaffold_habit(db, habit.id)
+        assert exc_info.value.status_code == 400
+        assert "tracking" in exc_info.value.detail
+
+    def test_nonexistent_habit_404(self, db):
+        """Nonexistent habit_id raises 404."""
+        with pytest.raises(Exception) as exc_info:
+            re_scaffold_habit(db, uuid.uuid4())
+        assert exc_info.value.status_code == 404

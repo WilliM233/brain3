@@ -16,6 +16,8 @@
 
 """Tests for Habit CRUD endpoints."""
 
+from datetime import date
+
 from tests.conftest import FAKE_UUID, make_domain, make_habit, make_routine
 
 # ---------------------------------------------------------------------------
@@ -376,6 +378,121 @@ class TestUpdateHabit:
             f"/api/habits/{habit['id']}", json={"graduation_target": 2.0},
         )
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# [2G-Gap-01] Auto-populate introduced_at on transition to accountable
+# ---------------------------------------------------------------------------
+
+
+class TestIntroducedAtAutoPopulate:
+
+    def test_create_accountable_without_introduced_at_sets_today(self, client):
+        """POST with scaffolding_status=accountable and no introduced_at → today."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Meditate",
+                "frequency": "daily",
+                "scaffolding_status": "accountable",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["introduced_at"] == date.today().isoformat()
+
+    def test_create_accountable_with_explicit_introduced_at_respected(self, client):
+        """POST with explicit introduced_at is never overwritten."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Meditate",
+                "frequency": "daily",
+                "scaffolding_status": "accountable",
+                "introduced_at": "2026-01-15",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["introduced_at"] == "2026-01-15"
+
+    def test_create_tracking_leaves_introduced_at_null(self, client):
+        """POST with scaffolding_status=tracking does not auto-set introduced_at."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Journal",
+                "frequency": "daily",
+                "scaffolding_status": "tracking",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["introduced_at"] is None
+
+    def test_patch_transition_to_accountable_sets_today(self, client):
+        """PATCH transition tracking → accountable with no prior value → today."""
+        habit = make_habit(client, scaffolding_status="tracking")
+        assert habit["introduced_at"] is None
+
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={"scaffolding_status": "accountable"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["scaffolding_status"] == "accountable"
+        assert body["introduced_at"] == date.today().isoformat()
+
+    def test_patch_transition_with_explicit_introduced_at_respected(self, client):
+        """PATCH transition with explicit introduced_at uses the provided value."""
+        habit = make_habit(client, scaffolding_status="tracking")
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={
+                "scaffolding_status": "accountable",
+                "introduced_at": "2026-03-01",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["introduced_at"] == "2026-03-01"
+
+    def test_patch_unchanged_scaffolding_does_not_touch_introduced_at(self, client):
+        """PATCH that doesn't change scaffolding_status never modifies introduced_at."""
+        habit = make_habit(client, scaffolding_status="tracking")
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={"title": "Rename only"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["introduced_at"] is None
+
+    def test_patch_already_accountable_with_value_not_overwritten(self, client):
+        """PATCH on a habit already accountable with introduced_at set never mutates it."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Meditate",
+                "frequency": "daily",
+                "scaffolding_status": "accountable",
+                "introduced_at": "2026-02-20",
+            },
+        )
+        assert resp.status_code == 201
+        habit = resp.json()
+
+        # PATCH something unrelated — introduced_at must survive untouched.
+        resp = client.patch(
+            f"/api/habits/{habit['id']}", json={"title": "Meditate (renamed)"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["introduced_at"] == "2026-02-20"
+
+        # Re-sending scaffolding_status=accountable on a habit already at that
+        # value + with a date set must also leave the date unchanged.
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={"scaffolding_status": "accountable"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["introduced_at"] == "2026-02-20"
 
 
 # ---------------------------------------------------------------------------

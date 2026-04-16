@@ -45,7 +45,14 @@ def create_habit(payload: HabitCreate, db: Session = Depends(get_db)) -> Habit:
         if not routine:
             raise HTTPException(status_code=400, detail="Routine not found")
 
-    habit = Habit(**payload.model_dump())
+    fields = payload.model_dump()
+
+    # [2G-Gap-01] Auto-populate introduced_at when creating an accountable
+    # habit without an explicit date. Graduation needs a start anchor.
+    if fields.get("scaffolding_status") == "accountable" and fields.get("introduced_at") is None:
+        fields["introduced_at"] = date.today()
+
+    habit = Habit(**fields)
     db.add(habit)
     db.commit()
     db.refresh(habit)
@@ -122,6 +129,16 @@ def update_habit(
         and updates["notification_frequency"] != habit.notification_frequency
     ):
         updates["last_frequency_changed_at"] = datetime.now(tz=UTC)
+
+    # [2G-Gap-01] Auto-populate introduced_at on transition to accountable.
+    # Graduation evaluation reads introduced_at to compute days_since_introduction;
+    # without an anchor date it cannot produce a correct result.
+    if (
+        updates.get("scaffolding_status") == "accountable"
+        and "introduced_at" not in updates
+        and habit.introduced_at is None
+    ):
+        updates["introduced_at"] = date.today()
 
     for field, value in updates.items():
         setattr(habit, field, value)

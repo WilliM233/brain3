@@ -588,6 +588,7 @@ class Habit(Base):
     )
     graduation_threshold: Mapped[int | None] = mapped_column(Integer, default=30)
     friction_score: Mapped[int | None] = mapped_column(Integer)
+    position: Mapped[int | None] = mapped_column(Integer)
     re_scaffold_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

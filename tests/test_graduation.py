@@ -2331,3 +2331,179 @@ class TestGraduatedAtTimestamp:
         habit = _create_habit(db, scaffolding_status="accountable")
         response = HabitResponse.model_validate(habit)
         assert response.graduated_at is None
+
+
+# ===========================================================================
+# [2G-fix-02] position field for routine ordering
+# ===========================================================================
+
+
+class TestHabitPositionField:
+    """Tests for the position column added by 2G-fix-02."""
+
+    def test_position_accepted_on_create(self, client):
+        """POST /api/habits accepts position field."""
+        from tests.conftest import make_habit
+
+        habit = make_habit(client, position=3)
+        assert habit["position"] == 3
+
+    def test_position_accepted_on_update(self, client):
+        """PATCH /api/habits/{id} accepts position field."""
+        from tests.conftest import make_habit
+
+        habit = make_habit(client)
+        assert habit["position"] is None
+
+        resp = client.patch(f"/api/habits/{habit['id']}", json={"position": 5})
+        assert resp.status_code == 200
+        assert resp.json()["position"] == 5
+
+    def test_position_in_response(self, client):
+        """HabitResponse includes position field."""
+        from tests.conftest import make_habit
+
+        habit = make_habit(client, position=1)
+        resp = client.get(f"/api/habits/{habit['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["position"] == 1
+
+    def test_position_defaults_to_null(self, client):
+        """Position is null when not specified."""
+        from tests.conftest import make_habit
+
+        habit = make_habit(client)
+        assert habit["position"] is None
+
+    def test_tracking_ordered_by_position_then_created_at(self, db):
+        """Active tracking habits sorted by position first, then created_at."""
+        routine = _create_routine(db)
+
+        # Create habits in reverse position order
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Position 2",
+            position=2,
+        )
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Position 1",
+            position=1,
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Position 1"
+
+    def test_null_position_sorts_after_explicit(self, db):
+        """Habits with null position sort after habits with explicit positions."""
+        routine = _create_routine(db)
+
+        # Null position created first (would win on created_at alone)
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="No Position",
+            position=None,
+        )
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Has Position",
+            position=10,
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Has Position"
+
+    def test_paused_ordered_by_position_then_introduced_at(self, db):
+        """Paused tracking habits sorted by position first, then introduced_at."""
+        routine = _create_routine(db)
+
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Paused Pos 3",
+            position=3,
+            introduced_at=date.today() - timedelta(days=60),
+        )
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Paused Pos 1",
+            position=1,
+            introduced_at=date.today() - timedelta(days=5),
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Paused Pos 1"
+        assert result.suggested_next.source == "paused"
+
+    def test_paused_null_position_falls_back_to_introduced_at(self, db):
+        """Paused habits with null position fall back to introduced_at ordering."""
+        routine = _create_routine(db)
+
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Newer Paused",
+            introduced_at=date.today() - timedelta(days=5),
+        )
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Older Paused",
+            introduced_at=date.today() - timedelta(days=30),
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "Older Paused"
+
+    def test_created_at_fallback_when_all_positions_null(self, db):
+        """With no position set, falls back to created_at ordering."""
+        routine = _create_routine(db)
+
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="First Created",
+        )
+        _create_habit(
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Second Created",
+        )
+
+        result = get_stacking_recommendation(db, routine.id)
+
+        assert result.suggested_next is not None
+        assert result.suggested_next.habit_name == "First Created"

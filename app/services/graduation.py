@@ -1033,7 +1033,10 @@ def get_stacking_recommendation(
         # ordered by introduced_at (oldest first)
         paused_tracking = [h for h in paused_habits if h.scaffolding_status == "tracking"]
         paused_tracking.sort(
-            key=lambda h: h.introduced_at or datetime.min.date(),
+            key=lambda h: (
+                h.position if h.position is not None else float("inf"),
+                h.introduced_at or datetime.min.date(),
+            ),
         )
 
         if paused_tracking:
@@ -1048,10 +1051,14 @@ def get_stacking_recommendation(
                 ),
             )
         else:
-            # Priority 2: Active tracking habits, ordered by created_at
-            # (position field not yet available — using created_at as proxy)
+            # Priority 2: Active tracking habits, ordered by position then created_at
             active_tracking = [h for h in active_habits if h.scaffolding_status == "tracking"]
-            active_tracking.sort(key=lambda h: h.created_at)
+            active_tracking.sort(
+                key=lambda h: (
+                    h.position if h.position is not None else float("inf"),
+                    h.created_at,
+                ),
+            )
 
             if active_tracking:
                 pick = active_tracking[0]

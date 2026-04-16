@@ -68,9 +68,7 @@ class HabitCreate(BaseModel):
     def standalone_requires_frequency(self) -> HabitCreate:
         """Standalone habits (no routine_id) must specify a frequency."""
         if self.routine_id is None and self.frequency is None:
-            raise ValueError(
-                "frequency is required for standalone habits (no routine_id)"
-            )
+            raise ValueError("frequency is required for standalone habits (no routine_id)")
         return self
 
 
@@ -127,6 +125,7 @@ class HabitResponse(BaseModel):
     friction_score: int | None = None
     re_scaffold_count: int
     last_frequency_changed_at: datetime | None = None
+    graduated_at: datetime | None = None
     current_streak: int
     best_streak: int
     last_completed: date | None = None

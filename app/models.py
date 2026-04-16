@@ -48,16 +48,21 @@ from app.schemas.rule import RuleAction, RuleEntityType, RuleMetric, RuleOperato
 # Association table: task_tags
 # ---------------------------------------------------------------------------
 
+
 class TaskTag(Base):
     """Many-to-many link between tasks and tags."""
 
     __tablename__ = "task_tags"
 
     task_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -67,10 +72,14 @@ class ActivityTag(Base):
     __tablename__ = "activity_tags"
 
     activity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("activity_log.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("activity_log.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -80,10 +89,14 @@ class ArtifactTag(Base):
     __tablename__ = "artifact_tags"
 
     artifact_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -93,10 +106,14 @@ class ProtocolTag(Base):
     __tablename__ = "protocol_tags"
 
     protocol_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("protocols.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -106,10 +123,14 @@ class DirectiveTag(Base):
     __tablename__ = "directive_tags"
 
     directive_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("directives.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -117,16 +138,21 @@ class DirectiveTag(Base):
 # Association tables: skill relationships
 # ---------------------------------------------------------------------------
 
+
 class SkillDomain(Base):
     """Many-to-many link between skills and domains."""
 
     __tablename__ = "skill_domains"
 
     skill_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     domain_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("domains.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -136,10 +162,14 @@ class SkillProtocol(Base):
     __tablename__ = "skill_protocols"
 
     skill_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     protocol_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("protocols.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("protocols.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -149,10 +179,14 @@ class SkillDirective(Base):
     __tablename__ = "skill_directives"
 
     skill_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     directive_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("directives.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("directives.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -160,31 +194,38 @@ class SkillDirective(Base):
 # Pillar 1: Domains
 # ---------------------------------------------------------------------------
 
+
 class Domain(Base):
     """Top-level life area (House, Network, Finances, Health, etc.)."""
 
     __tablename__ = "domains"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     color: Mapped[str | None] = mapped_column(String)
     sort_order: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
     # Relationships
     goals: Mapped[list["Goal"]] = relationship(
-        back_populates="domain", cascade="all, delete-orphan",
+        back_populates="domain",
+        cascade="all, delete-orphan",
     )
     routines: Mapped[list["Routine"]] = relationship(
-        back_populates="domain", cascade="all, delete-orphan",
+        back_populates="domain",
+        cascade="all, delete-orphan",
     )
     skills: Mapped[list["Skill"]] = relationship(
-        secondary="skill_domains", back_populates="domains",
+        secondary="skill_domains",
+        back_populates="domains",
     )
 
 
@@ -192,25 +233,33 @@ class Domain(Base):
 # Pillar 2: Goals
 # ---------------------------------------------------------------------------
 
+
 class Goal(Base):
     """Desired outcome tied to a domain."""
 
     __tablename__ = "goals"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     domain_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("domains.id", ondelete="CASCADE"),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -223,7 +272,8 @@ class Goal(Base):
     # Relationships
     domain: Mapped["Domain"] = relationship(back_populates="goals")
     projects: Mapped[list["Project"]] = relationship(
-        back_populates="goal", cascade="all, delete-orphan",
+        back_populates="goal",
+        cascade="all, delete-orphan",
     )
 
 
@@ -231,16 +281,21 @@ class Goal(Base):
 # Pillar 3: Projects
 # ---------------------------------------------------------------------------
 
+
 class Project(Base):
     """Concrete initiative that advances a goal."""
 
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     goal_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("goals.id", ondelete="CASCADE"),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -248,10 +303,13 @@ class Project(Base):
     deadline: Mapped[date | None] = mapped_column(Date)
     progress_pct: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -268,7 +326,8 @@ class Project(Base):
     # Relationships
     goal: Mapped["Goal"] = relationship(back_populates="projects")
     tasks: Mapped[list["Task"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
 
 
@@ -276,16 +335,20 @@ class Project(Base):
 # Pillar 4: Tasks
 # ---------------------------------------------------------------------------
 
+
 class Task(Base):
     """Actionable item, optionally tied to a project."""
 
     __tablename__ = "tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -298,10 +361,13 @@ class Task(Base):
     recurrence_rule: Mapped[str | None] = mapped_column(String)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -331,7 +397,8 @@ class Task(Base):
     # Relationships
     project: Mapped["Project | None"] = relationship(back_populates="tasks")
     tags: Mapped[list["Tag"]] = relationship(
-        secondary="task_tags", back_populates="tasks",
+        secondary="task_tags",
+        back_populates="tasks",
     )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="task")
 
@@ -340,32 +407,40 @@ class Task(Base):
 # Pillar 5: Tags
 # ---------------------------------------------------------------------------
 
+
 class Tag(Base):
     """Lightweight label for cross-cutting task categorisation."""
 
     __tablename__ = "tags"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     color: Mapped[str | None] = mapped_column(String)
 
     # Relationships
     tasks: Mapped[list["Task"]] = relationship(
-        secondary="task_tags", back_populates="tags",
+        secondary="task_tags",
+        back_populates="tags",
     )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(
-        secondary="activity_tags", back_populates="tags",
+        secondary="activity_tags",
+        back_populates="tags",
     )
     artifacts: Mapped[list["Artifact"]] = relationship(
-        secondary="artifact_tags", back_populates="tags",
+        secondary="artifact_tags",
+        back_populates="tags",
     )
     protocols: Mapped[list["Protocol"]] = relationship(
-        secondary="protocol_tags", back_populates="tags",
+        secondary="protocol_tags",
+        back_populates="tags",
     )
     directives: Mapped[list["Directive"]] = relationship(
-        secondary="directive_tags", back_populates="tags",
+        secondary="directive_tags",
+        back_populates="tags",
     )
 
 
@@ -373,16 +448,21 @@ class Tag(Base):
 # Pillar 6: Routines & Schedule
 # ---------------------------------------------------------------------------
 
+
 class Routine(Base):
     """Recurring habit tied to a domain."""
 
     __tablename__ = "routines"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     domain_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("domains.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("domains.id", ondelete="CASCADE"),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -394,10 +474,13 @@ class Routine(Base):
     energy_cost: Mapped[int | None] = mapped_column(Integer)
     activation_friction: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -423,13 +506,16 @@ class Routine(Base):
     # Relationships
     domain: Mapped["Domain"] = relationship(back_populates="routines")
     schedules: Mapped[list["RoutineSchedule"]] = relationship(
-        back_populates="routine", cascade="all, delete-orphan",
+        back_populates="routine",
+        cascade="all, delete-orphan",
     )
     habits: Mapped[list["Habit"]] = relationship(
-        back_populates="routine", cascade="all, delete-orphan",
+        back_populates="routine",
+        cascade="all, delete-orphan",
     )
     completions: Mapped[list["RoutineCompletion"]] = relationship(
-        back_populates="routine", cascade="all, delete-orphan",
+        back_populates="routine",
+        cascade="all, delete-orphan",
     )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="routine")
 
@@ -440,10 +526,14 @@ class RoutineSchedule(Base):
     __tablename__ = "routine_schedule"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     routine_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("routines.id", ondelete="CASCADE"),
+        nullable=False,
     )
     day_of_week: Mapped[str | None] = mapped_column(String)
     time_of_day: Mapped[str | None] = mapped_column(String)
@@ -457,54 +547,77 @@ class RoutineSchedule(Base):
 # Habits — atomic behavioral units (standalone or under a routine)
 # ---------------------------------------------------------------------------
 
+
 class Habit(Base):
     """Atomic behavioral unit that can exist standalone or nested under a routine."""
 
     __tablename__ = "habits"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     routine_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("routines.id", ondelete="CASCADE"),
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="active",
+        String,
+        nullable=False,
+        server_default="active",
     )
     frequency: Mapped[str | None] = mapped_column(String)
     notification_frequency: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="none",
+        String,
+        nullable=False,
+        server_default="none",
     )
     scaffolding_status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="tracking",
+        String,
+        nullable=False,
+        server_default="tracking",
     )
     introduced_at: Mapped[date | None] = mapped_column(Date)
     graduation_window: Mapped[int | None] = mapped_column(Integer, default=30)
     graduation_target: Mapped[float | None] = mapped_column(
-        Numeric(precision=3, scale=2), default=0.85,
+        Numeric(precision=3, scale=2),
+        default=0.85,
     )
     graduation_threshold: Mapped[int | None] = mapped_column(Integer, default=30)
     friction_score: Mapped[int | None] = mapped_column(Integer)
     re_scaffold_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0"),
+        Integer,
+        nullable=False,
+        server_default=text("0"),
     )
     last_frequency_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
+    graduated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
     current_streak: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0"),
+        Integer,
+        nullable=False,
+        server_default=text("0"),
     )
     best_streak: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0"),
+        Integer,
+        nullable=False,
+        server_default=text("0"),
     )
     last_completed: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -537,7 +650,8 @@ class Habit(Base):
     # Relationships
     routine: Mapped["Routine | None"] = relationship(back_populates="habits")
     completions: Mapped[list["HabitCompletion"]] = relationship(
-        back_populates="habit", cascade="all, delete-orphan",
+        back_populates="habit",
+        cascade="all, delete-orphan",
     )
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="habit")
 
@@ -546,13 +660,16 @@ class Habit(Base):
 # Habit Completions — per-event completion records
 # ---------------------------------------------------------------------------
 
+
 class HabitCompletion(Base):
     """Record of a single habit completion event."""
 
     __tablename__ = "habit_completions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     habit_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -563,12 +680,14 @@ class HabitCompletion(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "habit_id", "completed_at",
+            "habit_id",
+            "completed_at",
             name="uq_habit_completions_habit_date",
         ),
         CheckConstraint(
@@ -585,13 +704,16 @@ class HabitCompletion(Base):
 # Routine Completions — per-event routine completion records
 # ---------------------------------------------------------------------------
 
+
 class RoutineCompletion(Base):
     """Record of a single routine completion event."""
 
     __tablename__ = "routine_completions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     routine_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -602,7 +724,9 @@ class RoutineCompletion(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     freeform_note: Mapped[str | None] = mapped_column(Text)
     reconciled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false"),
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
     )
     reconciled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -615,7 +739,8 @@ class RoutineCompletion(Base):
         ),
         Index(
             "ix_routine_completions_routine_completed",
-            "routine_id", "completed_at",
+            "routine_id",
+            "completed_at",
         ),
         Index("ix_routine_completions_reconciled", "reconciled"),
     )
@@ -628,13 +753,16 @@ class RoutineCompletion(Base):
 # Pillar 7a: State Check-ins
 # ---------------------------------------------------------------------------
 
+
 class StateCheckin(Base):
     """Point-in-time self-assessment of energy, mood, and focus."""
 
     __tablename__ = "state_checkins"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     checkin_type: Mapped[str] = mapped_column(String, nullable=False)
     energy_level: Mapped[int | None] = mapped_column(Integer)
@@ -643,7 +771,8 @@ class StateCheckin(Base):
     freeform_note: Mapped[str | None] = mapped_column(Text)
     context: Mapped[str | None] = mapped_column(String)
     logged_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
     __table_args__ = (
@@ -673,25 +802,32 @@ class StateCheckin(Base):
 # Pillar 7b: Activity Log
 # ---------------------------------------------------------------------------
 
+
 class ActivityLog(Base):
     """Record of an action taken — completed task, skipped routine, check-in, etc."""
 
     __tablename__ = "activity_log"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     task_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="SET NULL"),
     )
     routine_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("routines.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("routines.id", ondelete="SET NULL"),
     )
     checkin_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("state_checkins.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("state_checkins.id", ondelete="SET NULL"),
     )
     habit_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("habits.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("habits.id", ondelete="SET NULL"),
     )
     action_type: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -701,7 +837,8 @@ class ActivityLog(Base):
     friction_actual: Mapped[int | None] = mapped_column(Integer)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
     logged_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
     __table_args__ = (
@@ -736,7 +873,8 @@ class ActivityLog(Base):
     checkin: Mapped["StateCheckin | None"] = relationship(back_populates="activity_logs")
     habit: Mapped["Habit | None"] = relationship(back_populates="activity_logs")
     tags: Mapped[list["Tag"]] = relationship(
-        secondary="activity_tags", back_populates="activity_logs",
+        secondary="activity_tags",
+        back_populates="activity_logs",
     )
 
 
@@ -744,13 +882,16 @@ class ActivityLog(Base):
 # Artifacts — living reference documents
 # ---------------------------------------------------------------------------
 
+
 class Artifact(Base):
     """Stored document with versioning, multi-part grouping, and tagging."""
 
     __tablename__ = "artifacts"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     artifact_type: Mapped[str] = mapped_column(String, nullable=False)
@@ -758,14 +899,18 @@ class Artifact(Base):
     content_size: Mapped[int] = mapped_column(Integer, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
     )
     is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -785,13 +930,16 @@ class Artifact(Base):
 
     # Relationships
     tags: Mapped[list["Tag"]] = relationship(
-        secondary="artifact_tags", back_populates="artifacts",
+        secondary="artifact_tags",
+        back_populates="artifacts",
     )
     parent: Mapped["Artifact | None"] = relationship(
-        remote_side=[id], foreign_keys=[parent_id],
+        remote_side=[id],
+        foreign_keys=[parent_id],
     )
     children: Mapped[list["Artifact"]] = relationship(
-        foreign_keys=[parent_id], overlaps="parent",
+        foreign_keys=[parent_id],
+        overlaps="parent",
     )
     protocols: Mapped[list["Protocol"]] = relationship(back_populates="artifact")
     skills: Mapped[list["Skill"]] = relationship(back_populates="artifact")
@@ -801,40 +949,47 @@ class Artifact(Base):
 # Protocols — step-by-step procedures
 # ---------------------------------------------------------------------------
 
+
 class Protocol(Base):
     """Repeatable behavioral pattern with ordered steps (JSONB)."""
 
     __tablename__ = "protocols"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     steps: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
     )
     is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
-    __table_args__ = (
-        Index("ix_protocols_is_seedable", "is_seedable"),
-    )
+    __table_args__ = (Index("ix_protocols_is_seedable", "is_seedable"),)
 
     # Relationships
     tags: Mapped[list["Tag"]] = relationship(
-        secondary="protocol_tags", back_populates="protocols",
+        secondary="protocol_tags",
+        back_populates="protocols",
     )
     artifact: Mapped["Artifact | None"] = relationship(back_populates="protocols")
     skills: Mapped[list["Skill"]] = relationship(
-        secondary="skill_protocols", back_populates="protocols",
+        secondary="skill_protocols",
+        back_populates="protocols",
     )
 
 
@@ -842,13 +997,16 @@ class Protocol(Base):
 # Directives — principles and guardrails
 # ---------------------------------------------------------------------------
 
+
 class Directive(Base):
     """Declarative rule or guardrail with scope-based resolution."""
 
     __tablename__ = "directives"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -857,10 +1015,13 @@ class Directive(Base):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -878,10 +1039,12 @@ class Directive(Base):
 
     # Relationships
     tags: Mapped[list["Tag"]] = relationship(
-        secondary="directive_tags", back_populates="directives",
+        secondary="directive_tags",
+        back_populates="directives",
     )
     skills: Mapped[list["Skill"]] = relationship(
-        secondary="skill_directives", back_populates="directives",
+        secondary="skill_directives",
+        back_populates="directives",
     )
 
 
@@ -889,27 +1052,34 @@ class Directive(Base):
 # Skills — contextual operating modes
 # ---------------------------------------------------------------------------
 
+
 class Skill(Base):
     """Contextual mode that composes protocols, directives, and domains."""
 
     __tablename__ = "skills"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     adhd_patterns: Mapped[str | None] = mapped_column(Text)
     artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
     )
     is_seedable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -919,13 +1089,16 @@ class Skill(Base):
 
     # Relationships
     domains: Mapped[list["Domain"]] = relationship(
-        secondary="skill_domains", back_populates="skills",
+        secondary="skill_domains",
+        back_populates="skills",
     )
     protocols: Mapped[list["Protocol"]] = relationship(
-        secondary="skill_protocols", back_populates="skills",
+        secondary="skill_protocols",
+        back_populates="skills",
     )
     directives: Mapped[list["Directive"]] = relationship(
-        secondary="skill_directives", back_populates="skills",
+        secondary="skill_directives",
+        back_populates="skills",
     )
     artifact: Mapped["Artifact | None"] = relationship(back_populates="skills")
 
@@ -934,27 +1107,36 @@ class Skill(Base):
 # Notification Queue — proactive notification system
 # ---------------------------------------------------------------------------
 
+
 class NotificationQueue(Base):
     """Queued notification awaiting delivery and optional user response."""
 
     __tablename__ = "notification_queue"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     notification_type: Mapped[str] = mapped_column(String, nullable=False)
     delivery_type: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="notification",
+        String,
+        nullable=False,
+        server_default="notification",
     )
     status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="pending",
+        String,
+        nullable=False,
+        server_default="pending",
     )
     scheduled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     target_entity_type: Mapped[str] = mapped_column(String, nullable=False)
     target_entity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False,
+        UUID(as_uuid=True),
+        nullable=False,
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)
     canned_responses: Mapped[list | None] = mapped_column(
@@ -970,13 +1152,17 @@ class NotificationQueue(Base):
     )
     scheduled_by: Mapped[str] = mapped_column(String, nullable=False)
     rule_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("rules.id", ondelete="SET NULL"),
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -1013,24 +1199,30 @@ class NotificationQueue(Base):
 # Rules Engine — conditional logic layer for automated notifications
 # ---------------------------------------------------------------------------
 
+
 class Rule(Base):
     """A rule that watches an entity metric and fires a notification."""
 
     __tablename__ = "rules"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     entity_type: Mapped[RuleEntityType] = mapped_column(
-        SAEnum(RuleEntityType, native_enum=False), nullable=False,
+        SAEnum(RuleEntityType, native_enum=False),
+        nullable=False,
     )
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     metric: Mapped[RuleMetric] = mapped_column(
-        SAEnum(RuleMetric, native_enum=False), nullable=False,
+        SAEnum(RuleMetric, native_enum=False),
+        nullable=False,
     )
     operator: Mapped[RuleOperator] = mapped_column(
-        SAEnum(RuleOperator, native_enum=False), nullable=False,
+        SAEnum(RuleOperator, native_enum=False),
+        nullable=False,
     )
     threshold: Mapped[int] = mapped_column(Integer, nullable=False)
     action: Mapped[RuleAction] = mapped_column(
@@ -1041,22 +1233,31 @@ class Rule(Base):
     notification_type: Mapped[str] = mapped_column(String, nullable=False)
     message_template: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true"),
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
     )
     cooldown_hours: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("24"),
+        Integer,
+        nullable=False,
+        server_default=text("24"),
     )
     is_default: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false"),
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
     )
     last_triggered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (

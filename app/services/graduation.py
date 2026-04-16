@@ -60,7 +60,10 @@ class GraduationExecutionResult(BaseModel):
 
 
 def apply_re_scaffold_tightening(
-    window: int, target: float, threshold: int, re_scaffold_count: int,
+    window: int,
+    target: float,
+    threshold: int,
+    re_scaffold_count: int,
 ) -> tuple[int, float, int]:
     """Tighten graduation criteria based on re-scaffold history."""
     for _ in range(re_scaffold_count):
@@ -108,7 +111,10 @@ def evaluate_graduation(
     # Apply re-scaffold tightening if applicable
     if habit.re_scaffold_count > 0:
         window, target, threshold = apply_re_scaffold_tightening(
-            window, target, threshold, habit.re_scaffold_count,
+            window,
+            target,
+            threshold,
+            habit.re_scaffold_count,
         )
 
     now = datetime.now(tz=UTC)
@@ -154,9 +160,7 @@ def evaluate_graduation(
             blocking_reasons=["No notification data in evaluation window"],
         )
 
-    already_done_count = sum(
-        1 for n in notifications if n.response == "Already done"
-    )
+    already_done_count = sum(1 for n in notifications if n.response == "Already done")
     current_rate = already_done_count / total_notifications
 
     meets_rate = current_rate >= target
@@ -164,9 +168,7 @@ def evaluate_graduation(
     # Build blocking reasons
     blocking_reasons: list[str] = []
     if not meets_rate:
-        blocking_reasons.append(
-            f"Rate {current_rate:.0%} below target {target:.0%}"
-        )
+        blocking_reasons.append(f"Rate {current_rate:.0%} below target {target:.0%}")
     if not meets_threshold:
         blocking_reasons.append(
             f"{days_since_introduction} days since introduction, need {threshold}"
@@ -248,14 +250,14 @@ def graduate_habit(
             previous_notification_frequency=previous_frequency,
             evaluation=evaluation,
             message=(
-                "Habit does not meet graduation criteria. "
-                + "; ".join(evaluation.blocking_reasons)
+                "Habit does not meet graduation criteria. " + "; ".join(evaluation.blocking_reasons)
             ),
         )
 
     # Execute transition
     habit.scaffolding_status = "graduated"
     habit.notification_frequency = "graduated"
+    habit.graduated_at = datetime.now(tz=UTC)
 
     # Log activity entry
     forced_label = " (forced)" if force else ""
@@ -384,8 +386,7 @@ def evaluate_frequency_step_down(
     if habit.notification_frequency not in FREQUENCY_ORDER:
         return _no_recommendation(
             reasons=[
-                f"Frequency '{habit.notification_frequency}' is not in the "
-                "step-down progression"
+                f"Frequency '{habit.notification_frequency}' is not in the step-down progression"
             ],
         )
 
@@ -436,9 +437,7 @@ def evaluate_frequency_step_down(
         )
 
     # Compute "already done" rate
-    already_done_count = sum(
-        1 for n in notifications if n.response == "Already done"
-    )
+    already_done_count = sum(1 for n in notifications if n.response == "Already done")
     rate = already_done_count / total
 
     # Check if already at minimum stepped frequency
@@ -458,10 +457,7 @@ def evaluate_frequency_step_down(
         return _no_recommendation(
             rate=rate,
             evaluated=total,
-            reasons=[
-                f"Rate {rate:.0%} below step-down threshold "
-                f"{STEP_DOWN_RATE_THRESHOLD:.0%}"
-            ],
+            reasons=[f"Rate {rate:.0%} below step-down threshold {STEP_DOWN_RATE_THRESHOLD:.0%}"],
         )
 
     return FrequencyStepResult(
@@ -520,8 +516,7 @@ def apply_frequency_step_down(
     activity = ActivityLog(
         action_type="completed",
         notes=(
-            f"Notification frequency stepped down: {habit.title}. "
-            f"{previous} → {new_frequency}."
+            f"Notification frequency stepped down: {habit.title}. {previous} → {new_frequency}."
         ),
         habit_id=habit_id,
     )
@@ -534,10 +529,7 @@ def apply_frequency_step_down(
         habit_id=habit_id,
         previous_frequency=previous,
         new_frequency=new_frequency,
-        message=(
-            f"Frequency stepped down for '{habit.title}': "
-            f"{previous} → {new_frequency}"
-        ),
+        message=(f"Frequency stepped down for '{habit.title}': {previous} → {new_frequency}"),
     )
 
 
@@ -614,14 +606,13 @@ def evaluate_graduated_habit_slip(
     now = datetime.now(tz=UTC)
     window_start = now - timedelta(days=SLIP_DETECTION_WINDOW_DAYS)
 
-    # Compute days since graduation (approximate — use updated_at as proxy
-    # since we don't have a dedicated graduated_at column)
+    # Compute days since graduation using dedicated graduated_at column
     days_since_graduation = 0
-    if habit.updated_at is not None:
-        updated = habit.updated_at
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=UTC)
-        days_since_graduation = (now - updated).days
+    if habit.graduated_at is not None:
+        grad_ts = habit.graduated_at
+        if grad_ts.tzinfo is None:
+            grad_ts = grad_ts.replace(tzinfo=UTC)
+        days_since_graduation = (now - grad_ts).days
 
     signals: list[SlipSignal] = []
 
@@ -640,28 +631,31 @@ def evaluate_graduated_habit_slip(
         )
 
         miss_count = sum(
-            1 for n in checklist_notifications
-            if n.response == "Partial" or n.status == "expired"
+            1 for n in checklist_notifications if n.response == "Partial" or n.status == "expired"
         )
 
         if miss_count >= CHECKLIST_CRITICAL_THRESHOLD:
-            signals.append(SlipSignal(
-                signal_type="missed_in_checklist",
-                detail=(
-                    f"{miss_count} partial/expired routine checklists in "
-                    f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
-                ),
-                severity="critical",
-            ))
+            signals.append(
+                SlipSignal(
+                    signal_type="missed_in_checklist",
+                    detail=(
+                        f"{miss_count} partial/expired routine checklists in "
+                        f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
+                    ),
+                    severity="critical",
+                )
+            )
         elif miss_count >= CHECKLIST_WARNING_THRESHOLD:
-            signals.append(SlipSignal(
-                signal_type="missed_in_checklist",
-                detail=(
-                    f"{miss_count} partial/expired routine checklists in "
-                    f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
-                ),
-                severity="warning",
-            ))
+            signals.append(
+                SlipSignal(
+                    signal_type="missed_in_checklist",
+                    detail=(
+                        f"{miss_count} partial/expired routine checklists in "
+                        f"the last {SLIP_DETECTION_WINDOW_DAYS} days"
+                    ),
+                    severity="warning",
+                )
+            )
 
     # Signal 2: No completion recorded
     window_7 = now - timedelta(days=COMPLETION_WARNING_DAYS)
@@ -677,14 +671,13 @@ def evaluate_graduated_habit_slip(
 
     if completions_14d == 0:
         # Zero completions in full 14-day window → critical
-        signals.append(SlipSignal(
-            signal_type="no_completion_recorded",
-            detail=(
-                f"No completions recorded in the last "
-                f"{SLIP_DETECTION_WINDOW_DAYS} days"
-            ),
-            severity="critical",
-        ))
+        signals.append(
+            SlipSignal(
+                signal_type="no_completion_recorded",
+                detail=(f"No completions recorded in the last {SLIP_DETECTION_WINDOW_DAYS} days"),
+                severity="critical",
+            )
+        )
     else:
         completions_7d = (
             db.query(sa_func.count(HabitCompletion.id))
@@ -697,14 +690,16 @@ def evaluate_graduated_habit_slip(
 
         if completions_7d == 0:
             # Zero completions in last 7 days but some in 14-day window → warning
-            signals.append(SlipSignal(
-                signal_type="no_completion_recorded",
-                detail=(
-                    f"No completions in the last {COMPLETION_WARNING_DAYS} days "
-                    f"(last completion was more than a week ago)"
-                ),
-                severity="warning",
-            ))
+            signals.append(
+                SlipSignal(
+                    signal_type="no_completion_recorded",
+                    detail=(
+                        f"No completions in the last {COMPLETION_WARNING_DAYS} days "
+                        f"(last completion was more than a week ago)"
+                    ),
+                    severity="warning",
+                )
+            )
 
     # Determine recommendation
     has_critical = any(s.severity == "critical" for s in signals)
@@ -802,6 +797,7 @@ def re_scaffold_habit(
     # Reverse graduation
     habit.scaffolding_status = "accountable"
     habit.notification_frequency = "daily"
+    habit.graduated_at = None
 
     # Increment re-scaffold count
     habit.re_scaffold_count += 1
@@ -812,7 +808,10 @@ def re_scaffold_habit(
     # Compute tightened criteria for informational purposes
     window, target, threshold = resolve_graduation_params(habit)
     window, target, threshold = apply_re_scaffold_tightening(
-        window, target, threshold, habit.re_scaffold_count,
+        window,
+        target,
+        threshold,
+        habit.re_scaffold_count,
     )
     tightened_params = {
         "window_days": window,
@@ -990,14 +989,10 @@ def get_stacking_recommendation(
 
     # Load all habits in this routine
     active_habits = (
-        db.query(Habit)
-        .filter(Habit.routine_id == routine_id, Habit.status == "active")
-        .all()
+        db.query(Habit).filter(Habit.routine_id == routine_id, Habit.status == "active").all()
     )
     paused_habits = (
-        db.query(Habit)
-        .filter(Habit.routine_id == routine_id, Habit.status == "paused")
-        .all()
+        db.query(Habit).filter(Habit.routine_id == routine_id, Habit.status == "paused").all()
     )
 
     # Freeform routine: no habits at all
@@ -1009,16 +1004,11 @@ def get_stacking_recommendation(
             active_accountable_habits=[],
             blocking_habits=[],
             suggested_next=None,
-            message=(
-                "This is a freeform routine with no habits. "
-                "Stacking doesn't apply."
-            ),
+            message=("This is a freeform routine with no habits. Stacking doesn't apply."),
         )
 
     # Assess stability of accountable habits
-    accountable_habits = [
-        h for h in active_habits if h.scaffolding_status == "accountable"
-    ]
+    accountable_habits = [h for h in active_habits if h.scaffolding_status == "accountable"]
     stability_infos: list[HabitStabilityInfo] = []
     blocking: list[HabitStabilityInfo] = []
 
@@ -1041,10 +1031,7 @@ def get_stacking_recommendation(
     if ready:
         # Priority 1: Paused habits with scaffolding_status='tracking',
         # ordered by introduced_at (oldest first)
-        paused_tracking = [
-            h for h in paused_habits
-            if h.scaffolding_status == "tracking"
-        ]
+        paused_tracking = [h for h in paused_habits if h.scaffolding_status == "tracking"]
         paused_tracking.sort(
             key=lambda h: h.introduced_at or datetime.min.date(),
         )
@@ -1063,10 +1050,7 @@ def get_stacking_recommendation(
         else:
             # Priority 2: Active tracking habits, ordered by created_at
             # (position field not yet available — using created_at as proxy)
-            active_tracking = [
-                h for h in active_habits
-                if h.scaffolding_status == "tracking"
-            ]
+            active_tracking = [h for h in active_habits if h.scaffolding_status == "tracking"]
             active_tracking.sort(key=lambda h: h.created_at)
 
             if active_tracking:
@@ -1098,10 +1082,7 @@ def get_stacking_recommendation(
             f"Ready to add {suggested_next.habit_name} to {routine.title}?"
         )
     else:
-        message = (
-            f"All habits in {routine.title} are in the scaffolding "
-            f"pipeline. Nice work."
-        )
+        message = f"All habits in {routine.title} are in the scaffolding pipeline. Nice work."
 
     return StackingRecommendation(
         ready=ready,

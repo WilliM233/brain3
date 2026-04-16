@@ -54,6 +54,7 @@ from tests.conftest import make_habit
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_habit(db, **overrides) -> Habit:
     """Insert a Habit directly via ORM.
 
@@ -65,9 +66,7 @@ def _create_habit(db, **overrides) -> Habit:
     nullable_grad_fields = ("graduation_window", "graduation_target", "graduation_threshold")
     force_null = {k for k in nullable_grad_fields if k in overrides and overrides[k] is None}
 
-    constructor_overrides = {
-        k: v for k, v in overrides.items() if k not in force_null
-    }
+    constructor_overrides = {k: v for k, v in overrides.items() if k not in force_null}
 
     defaults = {
         "id": uuid.uuid4(),
@@ -122,8 +121,9 @@ def _create_completion(db, habit_id: uuid.UUID, days_ago: int = 0) -> HabitCompl
     return c
 
 
-def _create_routine_checklist(db, routine_id: uuid.UUID, response: str | None,
-                              status: str, days_ago: int = 5) -> NotificationQueue:
+def _create_routine_checklist(
+    db, routine_id: uuid.UUID, response: str | None, status: str, days_ago: int = 5
+) -> NotificationQueue:
     """Insert a routine_checklist notification for a routine."""
     n = NotificationQueue(
         id=uuid.uuid4(),
@@ -142,8 +142,9 @@ def _create_routine_checklist(db, routine_id: uuid.UUID, response: str | None,
     return n
 
 
-def _create_notification(db, habit_id: uuid.UUID, response: str | None,
-                         status: str, days_ago: int = 5) -> NotificationQueue:
+def _create_notification(
+    db, habit_id: uuid.UUID, response: str | None, status: str, days_ago: int = 5
+) -> NotificationQueue:
     """Insert a notification_queue entry for a habit."""
     n = NotificationQueue(
         id=uuid.uuid4(),
@@ -168,30 +169,49 @@ def _create_notification(db, habit_id: uuid.UUID, response: str | None,
 
 
 class TestResolveGraduationParams:
-
     def test_all_defaults_friction_none(self, db):
         """Habit with no overrides and no friction_score gets middle-tier defaults."""
-        habit = _create_habit(db, graduation_window=None, graduation_target=None,
-                              graduation_threshold=None, friction_score=None)
+        habit = _create_habit(
+            db,
+            graduation_window=None,
+            graduation_target=None,
+            graduation_threshold=None,
+            friction_score=None,
+        )
         window, target, threshold = resolve_graduation_params(habit)
         assert (window, target, threshold) == (45, 0.85, 45)
 
     def test_friction_1_defaults(self, db):
-        habit = _create_habit(db, friction_score=1, graduation_window=None,
-                              graduation_target=None, graduation_threshold=None)
+        habit = _create_habit(
+            db,
+            friction_score=1,
+            graduation_window=None,
+            graduation_target=None,
+            graduation_threshold=None,
+        )
         window, target, threshold = resolve_graduation_params(habit)
         assert (window, target, threshold) == (30, 0.85, 30)
 
     def test_friction_5_defaults(self, db):
-        habit = _create_habit(db, friction_score=5, graduation_window=None,
-                              graduation_target=None, graduation_threshold=None)
+        habit = _create_habit(
+            db,
+            friction_score=5,
+            graduation_window=None,
+            graduation_target=None,
+            graduation_threshold=None,
+        )
         window, target, threshold = resolve_graduation_params(habit)
         assert (window, target, threshold) == (60, 0.80, 60)
 
     def test_per_habit_overrides(self, db):
         """Per-habit values take precedence over friction defaults."""
-        habit = _create_habit(db, friction_score=1, graduation_window=90,
-                              graduation_target=0.70, graduation_threshold=90)
+        habit = _create_habit(
+            db,
+            friction_score=1,
+            graduation_window=90,
+            graduation_target=0.70,
+            graduation_threshold=90,
+        )
         window, target, threshold = resolve_graduation_params(habit)
         assert window == 90
         assert target == 0.70
@@ -199,8 +219,13 @@ class TestResolveGraduationParams:
 
     def test_partial_override(self, db):
         """One override, rest from friction tier."""
-        habit = _create_habit(db, friction_score=4, graduation_window=100,
-                              graduation_target=None, graduation_threshold=None)
+        habit = _create_habit(
+            db,
+            friction_score=4,
+            graduation_window=100,
+            graduation_target=None,
+            graduation_threshold=None,
+        )
         window, target, threshold = resolve_graduation_params(habit)
         assert window == 100
         assert target == 0.80  # friction-4 default
@@ -213,14 +238,13 @@ class TestResolveGraduationParams:
 
 
 class TestReScaffoldTightening:
-
     def test_no_tightening(self):
         w, t, th = apply_re_scaffold_tightening(30, 0.85, 30, 0)
         assert (w, t, th) == (30, 0.85, 30)
 
     def test_single_re_scaffold(self):
         w, t, th = apply_re_scaffold_tightening(30, 0.85, 30, 1)
-        assert w == 37   # int(30 * 1.25)
+        assert w == 37  # int(30 * 1.25)
         assert t == 0.90  # 0.85 + 0.05
         assert th == 37  # int(30 * 1.25)
 
@@ -253,7 +277,6 @@ class TestReScaffoldTightening:
 
 
 class TestEvaluateGraduation:
-
     def test_eligible_habit(self, db):
         """Habit that meets both rate and threshold is eligible."""
         habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
@@ -452,37 +475,56 @@ class TestEvaluateGraduation:
 
 
 class TestFrictionScoreValidation:
-
     def test_create_with_valid_friction_score(self, client):
-        resp = client.post("/api/habits", json={
-            "title": "Test", "frequency": "daily", "friction_score": 3,
-        })
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Test",
+                "frequency": "daily",
+                "friction_score": 3,
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["friction_score"] == 3
 
     def test_create_with_null_friction_score(self, client):
-        resp = client.post("/api/habits", json={
-            "title": "Test", "frequency": "daily",
-        })
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Test",
+                "frequency": "daily",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["friction_score"] is None
 
     def test_create_friction_score_too_low(self, client):
-        resp = client.post("/api/habits", json={
-            "title": "Test", "frequency": "daily", "friction_score": 0,
-        })
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Test",
+                "frequency": "daily",
+                "friction_score": 0,
+            },
+        )
         assert resp.status_code == 422
 
     def test_create_friction_score_too_high(self, client):
-        resp = client.post("/api/habits", json={
-            "title": "Test", "frequency": "daily", "friction_score": 6,
-        })
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Test",
+                "frequency": "daily",
+                "friction_score": 6,
+            },
+        )
         assert resp.status_code == 422
 
     def test_update_friction_score(self, client):
         habit = make_habit(client)
         resp = client.patch(
-            f"/api/habits/{habit['id']}", json={"friction_score": 5},
+            f"/api/habits/{habit['id']}",
+            json={"friction_score": 5},
         )
         assert resp.status_code == 200
         assert resp.json()["friction_score"] == 5
@@ -490,7 +532,8 @@ class TestFrictionScoreValidation:
     def test_update_friction_score_invalid(self, client):
         habit = make_habit(client)
         resp = client.patch(
-            f"/api/habits/{habit['id']}", json={"friction_score": 10},
+            f"/api/habits/{habit['id']}",
+            json={"friction_score": 10},
         )
         assert resp.status_code == 422
 
@@ -577,7 +620,9 @@ class TestGraduateHabit:
     def test_graduation_preserves_streak_history(self, db):
         """best_streak and last_completed are unchanged after graduation."""
         habit = self._eligible_habit(
-            db, best_streak=15, last_completed=date.today() - timedelta(days=1),
+            db,
+            best_streak=15,
+            last_completed=date.today() - timedelta(days=1),
         )
         # Force the values in since _create_habit defaults may not set them
         habit.best_streak = 15
@@ -613,11 +658,7 @@ class TestGraduateHabit:
         habit = self._ineligible_habit(db)
         graduate_habit(db, habit.id, force=True)
 
-        log = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .first()
-        )
+        log = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).first()
         assert log is not None
         assert "(forced)" in log.notes
 
@@ -643,7 +684,9 @@ class TestGraduateHabit:
     def test_paused_habit_rejected(self, db):
         """Cannot graduate a paused habit."""
         habit = _create_habit(
-            db, status="paused", scaffolding_status="accountable",
+            db,
+            status="paused",
+            scaffolding_status="accountable",
             notification_frequency="daily",
         )
         with pytest.raises(Exception) as exc_info:
@@ -654,7 +697,9 @@ class TestGraduateHabit:
     def test_abandoned_habit_rejected(self, db):
         """Cannot graduate an abandoned habit."""
         habit = _create_habit(
-            db, status="abandoned", scaffolding_status="accountable",
+            db,
+            status="abandoned",
+            scaffolding_status="accountable",
             notification_frequency="daily",
         )
         with pytest.raises(Exception) as exc_info:
@@ -667,7 +712,9 @@ class TestGraduateHabit:
     def test_tracking_scaffolding_rejected(self, db):
         """Cannot graduate from 'tracking' scaffolding_status."""
         habit = _create_habit(
-            db, scaffolding_status="tracking", notification_frequency="daily",
+            db,
+            scaffolding_status="tracking",
+            notification_frequency="daily",
         )
         with pytest.raises(Exception) as exc_info:
             graduate_habit(db, habit.id)
@@ -679,7 +726,9 @@ class TestGraduateHabit:
     def test_already_graduated_returns_failure(self, db):
         """Already graduated habit returns success=False (not an exception)."""
         habit = _create_habit(
-            db, scaffolding_status="graduated", notification_frequency="graduated",
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
         )
 
         result = graduate_habit(db, habit.id)
@@ -703,11 +752,7 @@ class TestGraduateHabit:
         habit = self._eligible_habit(db)
         graduate_habit(db, habit.id)
 
-        log = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .first()
-        )
+        log = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).first()
         assert log is not None
         assert log.action_type == "completed"
         assert habit.title in log.notes
@@ -720,11 +765,7 @@ class TestGraduateHabit:
         habit = self._ineligible_habit(db)
         graduate_habit(db, habit.id, force=False)
 
-        log_count = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .count()
-        )
+        log_count = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).count()
         assert log_count == 0
 
     def test_evaluated_graduation_no_forced_label(self, db):
@@ -732,11 +773,7 @@ class TestGraduateHabit:
         habit = self._eligible_habit(db)
         graduate_habit(db, habit.id)
 
-        log = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .first()
-        )
+        log = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).first()
         assert "(forced)" not in log.notes
 
 
@@ -746,7 +783,6 @@ class TestGraduateHabit:
 
 
 class TestNextStepDown:
-
     def test_daily_to_every_other_day(self):
         assert next_step_down("daily") == "every_other_day"
 
@@ -775,11 +811,17 @@ class TestNextStepDown:
 
 
 class TestEvaluateFrequencyStepDown:
-
     def _habit_with_notifications(
-        self, db, *, notification_frequency="daily", already_done=10,
-        other_response=4, status="active", scaffolding_status="accountable",
-        last_frequency_changed_at=None, **habit_overrides,
+        self,
+        db,
+        *,
+        notification_frequency="daily",
+        already_done=10,
+        other_response=4,
+        status="active",
+        scaffolding_status="accountable",
+        last_frequency_changed_at=None,
+        **habit_overrides,
     ) -> Habit:
         """Create a habit with a mix of notification responses."""
         habit = _create_habit(
@@ -792,11 +834,18 @@ class TestEvaluateFrequencyStepDown:
         )
         for i in range(already_done):
             _create_notification(
-                db, habit.id, "Already done", "responded", days_ago=i + 1,
+                db,
+                habit.id,
+                "Already done",
+                "responded",
+                days_ago=i + 1,
             )
         for i in range(other_response):
             _create_notification(
-                db, habit.id, "Skip today", "responded",
+                db,
+                habit.id,
+                "Skip today",
+                "responded",
                 days_ago=already_done + i + 1,
             )
         return habit
@@ -806,7 +855,10 @@ class TestEvaluateFrequencyStepDown:
     def test_daily_step_down_recommended(self, db):
         """Daily habit with >= 60% already-done rate recommends every_other_day."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily", already_done=9, other_response=5,
+            db,
+            notification_frequency="daily",
+            already_done=9,
+            other_response=5,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -822,8 +874,10 @@ class TestEvaluateFrequencyStepDown:
     def test_every_other_day_step_down(self, db):
         """every_other_day → twice_week when rate meets threshold."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="every_other_day",
-            already_done=10, other_response=4,
+            db,
+            notification_frequency="every_other_day",
+            already_done=10,
+            other_response=4,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -833,8 +887,10 @@ class TestEvaluateFrequencyStepDown:
     def test_twice_week_step_down(self, db):
         """twice_week → weekly when rate meets threshold."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="twice_week",
-            already_done=10, other_response=4,
+            db,
+            notification_frequency="twice_week",
+            already_done=10,
+            other_response=4,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -845,8 +901,10 @@ class TestEvaluateFrequencyStepDown:
         """Exactly 60% rate still recommends step-down."""
         # 6 out of 10 = 60%
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=6, other_response=4,
+            db,
+            notification_frequency="daily",
+            already_done=6,
+            other_response=4,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -858,8 +916,10 @@ class TestEvaluateFrequencyStepDown:
     def test_weekly_no_step_down(self, db):
         """Weekly habit cannot step down further — graduation is separate."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="weekly",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="weekly",
+            already_done=14,
+            other_response=0,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -870,8 +930,10 @@ class TestEvaluateFrequencyStepDown:
     def test_graduated_no_step_down(self, db):
         """Graduated frequency is not in the progression."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="graduated",
-            already_done=10, other_response=4,
+            db,
+            notification_frequency="graduated",
+            already_done=10,
+            other_response=4,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -881,8 +943,10 @@ class TestEvaluateFrequencyStepDown:
     def test_none_frequency_no_step_down(self, db):
         """'none' frequency is not in the progression."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="none",
-            already_done=10, other_response=4,
+            db,
+            notification_frequency="none",
+            already_done=10,
+            other_response=4,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -892,8 +956,10 @@ class TestEvaluateFrequencyStepDown:
         """Rate below 60% does not recommend step-down."""
         # 5 out of 14 = ~36%
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=5, other_response=9,
+            db,
+            notification_frequency="daily",
+            already_done=5,
+            other_response=9,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -904,8 +970,10 @@ class TestEvaluateFrequencyStepDown:
     def test_insufficient_notifications(self, db):
         """Fewer than 5 notifications returns no recommendation."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=3, other_response=1,
+            db,
+            notification_frequency="daily",
+            already_done=3,
+            other_response=1,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -916,8 +984,10 @@ class TestEvaluateFrequencyStepDown:
     def test_zero_notifications(self, db):
         """No notifications at all returns no recommendation."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=0, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=0,
+            other_response=0,
         )
         result = evaluate_frequency_step_down(db, habit.id)
 
@@ -930,8 +1000,10 @@ class TestEvaluateFrequencyStepDown:
         """Habit with recent frequency change is in cooldown."""
         recent = datetime.now(tz=UTC) - timedelta(days=3)
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=14,
+            other_response=0,
             last_frequency_changed_at=recent,
         )
         result = evaluate_frequency_step_down(db, habit.id)
@@ -945,8 +1017,10 @@ class TestEvaluateFrequencyStepDown:
         """Habit with frequency change > 7 days ago is past cooldown."""
         old = datetime.now(tz=UTC) - timedelta(days=10)
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=14,
+            other_response=0,
             last_frequency_changed_at=old,
         )
         result = evaluate_frequency_step_down(db, habit.id)
@@ -958,8 +1032,10 @@ class TestEvaluateFrequencyStepDown:
         """Frequency change exactly 7 days ago — cooldown has expired."""
         boundary = datetime.now(tz=UTC) - timedelta(days=7)
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=14,
+            other_response=0,
             last_frequency_changed_at=boundary,
         )
         result = evaluate_frequency_step_down(db, habit.id)
@@ -972,8 +1048,10 @@ class TestEvaluateFrequencyStepDown:
     def test_paused_habit_rejected(self, db):
         """Paused habits are not evaluated for step-down."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=14,
+            other_response=0,
             status="paused",
         )
         result = evaluate_frequency_step_down(db, habit.id)
@@ -984,8 +1062,10 @@ class TestEvaluateFrequencyStepDown:
     def test_tracking_scaffolding_rejected(self, db):
         """Tracking habits are not evaluated for step-down."""
         habit = self._habit_with_notifications(
-            db, notification_frequency="daily",
-            already_done=14, other_response=0,
+            db,
+            notification_frequency="daily",
+            already_done=14,
+            other_response=0,
             scaffolding_status="tracking",
         )
         result = evaluate_frequency_step_down(db, habit.id)
@@ -1005,12 +1085,20 @@ class TestEvaluateFrequencyStepDown:
         # 14 recent "Already done"
         for i in range(14):
             _create_notification(
-                db, habit.id, "Already done", "responded", days_ago=i + 1,
+                db,
+                habit.id,
+                "Already done",
+                "responded",
+                days_ago=i + 1,
             )
         # 10 older "Skip today" — should be excluded by LIMIT
         for i in range(10):
             _create_notification(
-                db, habit.id, "Skip today", "responded", days_ago=20 + i,
+                db,
+                habit.id,
+                "Skip today",
+                "responded",
+                days_ago=20 + i,
             )
 
         result = evaluate_frequency_step_down(db, habit.id)
@@ -1024,7 +1112,11 @@ class TestEvaluateFrequencyStepDown:
         habit = _create_habit(db, notification_frequency="daily")
         for i in range(10):
             _create_notification(
-                db, habit.id, "Already done", "responded", days_ago=i + 1,
+                db,
+                habit.id,
+                "Already done",
+                "responded",
+                days_ago=i + 1,
             )
         _create_notification(db, habit.id, None, "pending", days_ago=1)
         _create_notification(db, habit.id, None, "delivered", days_ago=1)
@@ -1040,7 +1132,6 @@ class TestEvaluateFrequencyStepDown:
 
 
 class TestApplyFrequencyStepDown:
-
     def _accountable_habit(self, db, notification_frequency="daily") -> Habit:
         return _create_habit(
             db,
@@ -1084,11 +1175,7 @@ class TestApplyFrequencyStepDown:
         habit = self._accountable_habit(db)
         apply_frequency_step_down(db, habit.id, "every_other_day")
 
-        log = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .first()
-        )
+        log = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).first()
         assert log is not None
         assert log.action_type == "completed"
         assert "stepped down" in log.notes
@@ -1148,11 +1235,9 @@ class TestApplyFrequencyStepDown:
 
 
 class TestManualFrequencyOverrideCooldown:
-
     def test_manual_change_sets_last_frequency_changed_at(self, client):
         """Changing notification_frequency via PATCH sets last_frequency_changed_at."""
-        habit = make_habit(client, notification_frequency="daily",
-                          scaffolding_status="accountable")
+        habit = make_habit(client, notification_frequency="daily", scaffolding_status="accountable")
 
         resp = client.patch(
             f"/api/habits/{habit['id']}",
@@ -1165,8 +1250,7 @@ class TestManualFrequencyOverrideCooldown:
 
     def test_same_frequency_does_not_reset_cooldown(self, client):
         """Setting notification_frequency to the same value does NOT reset cooldown."""
-        habit = make_habit(client, notification_frequency="daily",
-                          scaffolding_status="accountable")
+        habit = make_habit(client, notification_frequency="daily", scaffolding_status="accountable")
 
         resp = client.patch(
             f"/api/habits/{habit['id']}",
@@ -1177,8 +1261,9 @@ class TestManualFrequencyOverrideCooldown:
 
     def test_manual_override_then_cooldown_respected(self, client, db):
         """After manual override, step-down evaluation sees cooldown."""
-        habit_data = make_habit(client, notification_frequency="daily",
-                                scaffolding_status="accountable")
+        habit_data = make_habit(
+            client, notification_frequency="daily", scaffolding_status="accountable"
+        )
 
         # Manual override to weekly
         client.patch(
@@ -1190,7 +1275,11 @@ class TestManualFrequencyOverrideCooldown:
         habit_id = uuid.UUID(habit_data["id"])
         for i in range(14):
             _create_notification(
-                db, habit_id, "Already done", "responded", days_ago=i + 1,
+                db,
+                habit_id,
+                "Already done",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_frequency_step_down(db, habit_id)
@@ -1304,9 +1393,7 @@ class TestEvaluateGraduatedHabitSlip:
 
         assert result.slip_detected is False
         # No checklist signals even if we somehow had checklist notifications
-        assert all(
-            s.signal_type != "missed_in_checklist" for s in result.slip_signals
-        )
+        assert all(s.signal_type != "missed_in_checklist" for s in result.slip_signals)
 
     def test_checklist_warning_3_misses(self, db):
         """3 partial/expired routine checklists in 14 days → warning signal."""
@@ -1318,7 +1405,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 3 partial checklist responses
         for i in range(3):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1341,11 +1432,19 @@ class TestEvaluateGraduatedHabitSlip:
         # 5 partial/expired checklist responses
         for i in range(3):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
         for i in range(2):
             _create_routine_checklist(
-                db, routine.id, None, "expired", days_ago=i + 4,
+                db,
+                routine.id,
+                None,
+                "expired",
+                days_ago=i + 4,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1366,7 +1465,11 @@ class TestEvaluateGraduatedHabitSlip:
             _create_completion(db, habit.id, days_ago=i + 1)
         for i in range(2):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1385,7 +1488,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 3 expired checklists
         for i in range(3):
             _create_routine_checklist(
-                db, routine.id, None, "expired", days_ago=i + 1,
+                db,
+                routine.id,
+                None,
+                "expired",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1406,7 +1513,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 5 partial checklists (Signal 1 critical)
         for i in range(5):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1424,7 +1535,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 3 partial checklists (Signal 1 warning)
         for i in range(3):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1441,7 +1556,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 3 partial checklists → warning only (Signal 1)
         for i in range(3):
             _create_routine_checklist(
-                db, routine.id, "Partial", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Partial",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1460,7 +1579,11 @@ class TestEvaluateGraduatedHabitSlip:
         # 5 complete checklists — should NOT trigger
         for i in range(5):
             _create_routine_checklist(
-                db, routine.id, "Complete", "responded", days_ago=i + 1,
+                db,
+                routine.id,
+                "Complete",
+                "responded",
+                days_ago=i + 1,
             )
 
         result = evaluate_graduated_habit_slip(db, habit.id)
@@ -1477,21 +1600,26 @@ class TestEvaluateGraduatedHabitSlip:
 
 
 class TestEvaluateAllGraduatedHabits:
-
     def test_returns_only_actionable(self, db):
         """Only habits with recommendation != 'no_action' are returned."""
         # Graduated habit with recent completions (no slip)
         good = _create_habit(
-            db, scaffolding_status="graduated", notification_frequency="graduated",
-            status="active", introduced_at=date.today() - timedelta(days=90),
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
+            status="active",
+            introduced_at=date.today() - timedelta(days=90),
         )
         for i in range(5):
             _create_completion(db, good.id, days_ago=i + 1)
 
         # Graduated habit with no completions (critical slip)
         bad = _create_habit(
-            db, scaffolding_status="graduated", notification_frequency="graduated",
-            status="active", introduced_at=date.today() - timedelta(days=90),
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
+            status="active",
+            introduced_at=date.today() - timedelta(days=90),
             title="Slipping Habit",
         )
 
@@ -1504,10 +1632,14 @@ class TestEvaluateAllGraduatedHabits:
     def test_excludes_non_graduated(self, db):
         """Accountable and tracking habits are not evaluated."""
         _create_habit(
-            db, scaffolding_status="accountable", status="active",
+            db,
+            scaffolding_status="accountable",
+            status="active",
         )
         _create_habit(
-            db, scaffolding_status="tracking", status="active",
+            db,
+            scaffolding_status="tracking",
+            status="active",
         )
 
         results = evaluate_all_graduated_habits(db)
@@ -1517,7 +1649,9 @@ class TestEvaluateAllGraduatedHabits:
     def test_excludes_inactive(self, db):
         """Paused graduated habits are not evaluated."""
         _create_habit(
-            db, scaffolding_status="graduated", notification_frequency="graduated",
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
             status="paused",
         )
 
@@ -1535,7 +1669,8 @@ class TestEvaluateAllGraduatedHabits:
         """Multiple slipping habits all appear in results."""
         for i in range(3):
             _create_habit(
-                db, scaffolding_status="graduated",
+                db,
+                scaffolding_status="graduated",
                 notification_frequency="graduated",
                 status="active",
                 introduced_at=date.today() - timedelta(days=90),
@@ -1553,7 +1688,6 @@ class TestEvaluateAllGraduatedHabits:
 
 
 class TestReScaffoldHabit:
-
     def _graduated_habit(self, db, **overrides) -> Habit:
         """Create a graduated, active habit."""
         defaults = {
@@ -1645,11 +1779,7 @@ class TestReScaffoldHabit:
 
         re_scaffold_habit(db, habit.id)
 
-        log = (
-            db.query(ActivityLog)
-            .filter(ActivityLog.habit_id == habit.id)
-            .first()
-        )
+        log = db.query(ActivityLog).filter(ActivityLog.habit_id == habit.id).first()
         assert log is not None
         assert log.action_type == "reflected"
         assert "re-scaffolded" in log.notes
@@ -1700,7 +1830,9 @@ class TestReScaffoldHabit:
     def test_reject_paused(self, db):
         """Cannot re-scaffold a paused habit."""
         habit = _create_habit(
-            db, scaffolding_status="graduated", notification_frequency="graduated",
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
             status="paused",
         )
 
@@ -1754,7 +1886,9 @@ class TestGetStackingRecommendation:
         """Routine with only tracking habits returns ready=True."""
         routine = _create_routine(db)
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
             title="Tracking Habit",
         )
         result = get_stacking_recommendation(db, routine.id)
@@ -1771,8 +1905,11 @@ class TestGetStackingRecommendation:
         """Ready when all accountable habits have >= 60% already-done rate."""
         routine = _create_routine(db)
         habit = _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Stable Habit", notification_frequency="daily",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Stable Habit",
+            notification_frequency="daily",
             introduced_at=date.today() - timedelta(days=30),
         )
         # Create 10 notifications: 7 "Already done" = 70% rate
@@ -1783,7 +1920,9 @@ class TestGetStackingRecommendation:
 
         # Add a tracking habit to be suggested
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
             title="Next Habit",
         )
 
@@ -1801,8 +1940,11 @@ class TestGetStackingRecommendation:
         """A habit at weekly frequency is stable regardless of rate."""
         routine = _create_routine(db)
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Weekly Habit", notification_frequency="weekly",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Weekly Habit",
+            notification_frequency="weekly",
             introduced_at=date.today() - timedelta(days=30),
         )
 
@@ -1817,8 +1959,11 @@ class TestGetStackingRecommendation:
         """Stable via 14+ days accountable with 7 consecutive completions."""
         routine = _create_routine(db)
         habit = _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Consistent Habit", notification_frequency="daily",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Consistent Habit",
+            notification_frequency="daily",
             introduced_at=date.today() - timedelta(days=20),
         )
         # No notifications (rate would be 0), but 7 completions in last 7 days
@@ -1836,8 +1981,11 @@ class TestGetStackingRecommendation:
         """Not ready when an accountable habit has low rate and no completions."""
         routine = _create_routine(db)
         habit = _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Struggling Habit", notification_frequency="daily",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Struggling Habit",
+            notification_frequency="daily",
             introduced_at=date.today() - timedelta(days=10),
         )
         # 10 notifications: 3 "Already done" = 30% rate (below 60%)
@@ -1859,14 +2007,20 @@ class TestGetStackingRecommendation:
 
         # Active tracking habit created first
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="active", title="Active Tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Active Tracking",
         )
 
         # Paused tracking habit
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="paused", title="Paused Tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Paused Tracking",
             introduced_at=date.today() - timedelta(days=30),
         )
 
@@ -1882,13 +2036,19 @@ class TestGetStackingRecommendation:
         routine = _create_routine(db)
 
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="paused", title="Newer Paused",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Newer Paused",
             introduced_at=date.today() - timedelta(days=5),
         )
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="paused", title="Older Paused",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="paused",
+            title="Older Paused",
             introduced_at=date.today() - timedelta(days=30),
         )
 
@@ -1903,12 +2063,18 @@ class TestGetStackingRecommendation:
 
         # Create in order — first created should be suggested
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="active", title="First Tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="First Tracking",
         )
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="tracking",
-            status="active", title="Second Tracking",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="tracking",
+            status="active",
+            title="Second Tracking",
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -1921,8 +2087,11 @@ class TestGetStackingRecommendation:
         """All habits graduated — ready but nothing to suggest."""
         routine = _create_routine(db)
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="graduated",
-            status="active", title="Graduated One",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="graduated",
+            status="active",
+            title="Graduated One",
             notification_frequency="graduated",
         )
 
@@ -1938,13 +2107,19 @@ class TestGetStackingRecommendation:
         routine = _create_routine(db)
         # Stable accountable habit (weekly)
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Weekly Habit", notification_frequency="weekly",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Weekly Habit",
+            notification_frequency="weekly",
         )
         # Graduated habit
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="graduated",
-            status="active", title="Graduated",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="graduated",
+            status="active",
+            title="Graduated",
             notification_frequency="graduated",
         )
 
@@ -1968,13 +2143,19 @@ class TestGetStackingRecommendation:
 
         # Stable habit (weekly)
         _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Stable One", notification_frequency="weekly",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Stable One",
+            notification_frequency="weekly",
         )
         # Blocking habit (low rate, few days)
         blocking = _create_habit(
-            db, routine_id=routine.id, scaffolding_status="accountable",
-            title="Needs Work", notification_frequency="daily",
+            db,
+            routine_id=routine.id,
+            scaffolding_status="accountable",
+            title="Needs Work",
+            notification_frequency="daily",
             introduced_at=date.today() - timedelta(days=5),
         )
         for i in range(6):
@@ -1986,3 +2167,167 @@ class TestGetStackingRecommendation:
         assert len(result.active_accountable_habits) == 2
         assert len(result.blocking_habits) == 1
         assert result.blocking_habits[0].habit_name == "Needs Work"
+
+
+# ===========================================================================
+# [2G-fix-01] graduated_at timestamp lifecycle
+# ===========================================================================
+
+
+class TestGraduatedAtTimestamp:
+    """Tests for the graduated_at column added by 2G-fix-01."""
+
+    def _eligible_habit(self, db, **overrides) -> Habit:
+        """Create an accountable habit that meets graduation criteria."""
+        defaults = {
+            "scaffolding_status": "accountable",
+            "notification_frequency": "daily",
+            "introduced_at": date.today() - timedelta(days=60),
+            "friction_score": 1,
+        }
+        defaults.update(overrides)
+        habit = _create_habit(db, **defaults)
+        # 10 notifications, 9 "Already done" = 90% rate (mirrors TestGraduateHabit)
+        for i in range(9):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        _create_notification(db, habit.id, "Skip today", "responded", days_ago=10)
+        return habit
+
+    def test_graduation_sets_graduated_at(self, db):
+        """graduate_habit() sets graduated_at to a UTC timestamp."""
+        habit = self._eligible_habit(db)
+        assert habit.graduated_at is None
+
+        before = datetime.now(tz=UTC)
+        graduate_habit(db, habit.id)
+        after = datetime.now(tz=UTC)
+
+        db.refresh(habit)
+        assert habit.graduated_at is not None
+        # SQLite returns naive datetimes — normalize for comparison
+        grad_ts = habit.graduated_at
+        if grad_ts.tzinfo is None:
+            grad_ts = grad_ts.replace(tzinfo=UTC)
+        assert before <= grad_ts <= after
+
+    def test_forced_graduation_sets_graduated_at(self, db):
+        """Forced graduation also sets graduated_at."""
+        habit = _create_habit(
+            db,
+            scaffolding_status="accountable",
+            notification_frequency="daily",
+            introduced_at=date.today() - timedelta(days=5),
+        )
+
+        graduate_habit(db, habit.id, force=True)
+        db.refresh(habit)
+
+        assert habit.graduated_at is not None
+
+    def test_already_graduated_does_not_update_graduated_at(self, db):
+        """Idempotent guard: re-graduating doesn't overwrite graduated_at."""
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+        db.refresh(habit)
+        original_graduated_at = habit.graduated_at
+
+        result = graduate_habit(db, habit.id)
+
+        assert result.success is False
+        db.refresh(habit)
+        assert habit.graduated_at == original_graduated_at
+
+    def test_re_scaffold_clears_graduated_at(self, db):
+        """re_scaffold_habit() sets graduated_at back to None."""
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+        db.refresh(habit)
+        assert habit.graduated_at is not None
+
+        re_scaffold_habit(db, habit.id)
+        db.refresh(habit)
+        assert habit.graduated_at is None
+
+    def test_slip_detection_uses_graduated_at_not_updated_at(self, db):
+        """days_since_graduation reflects graduated_at, not updated_at."""
+        habit = _create_habit(
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
+            introduced_at=date.today() - timedelta(days=90),
+        )
+        # Set graduated_at to 20 days ago
+        grad_time = datetime.now(tz=UTC) - timedelta(days=20)
+        habit.graduated_at = grad_time
+        db.commit()
+        db.refresh(habit)
+
+        # Add completions so we don't trigger slip signals
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 1)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+        assert result.days_since_graduation == 20
+
+    def test_patch_does_not_affect_days_since_graduation(self, db):
+        """Editing a graduated habit's description does not reset days_since_graduation."""
+        habit = _create_habit(
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
+            introduced_at=date.today() - timedelta(days=90),
+        )
+        # Graduate 15 days ago
+        grad_time = datetime.now(tz=UTC) - timedelta(days=15)
+        habit.graduated_at = grad_time
+        db.commit()
+        db.refresh(habit)
+
+        # Simulate a PATCH — change description, which triggers updated_at change
+        habit.description = "Updated description after graduation"
+        db.commit()
+        db.refresh(habit)
+
+        # Add completions so we don't trigger slip signals
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 1)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+        assert result.days_since_graduation == 15
+
+    def test_graduated_at_null_falls_back_to_zero(self, db):
+        """If graduated_at is None (legacy data), days_since_graduation is 0."""
+        habit = _create_habit(
+            db,
+            scaffolding_status="graduated",
+            notification_frequency="graduated",
+            introduced_at=date.today() - timedelta(days=90),
+        )
+        # graduated_at is None by default (no migration backfill)
+        assert habit.graduated_at is None
+
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 1)
+
+        result = evaluate_graduated_habit_slip(db, habit.id)
+        assert result.days_since_graduation == 0
+
+    def test_graduated_at_in_response_schema(self, db):
+        """HabitResponse includes graduated_at field."""
+        from app.schemas.habits import HabitResponse
+
+        habit = self._eligible_habit(db)
+        graduate_habit(db, habit.id)
+        db.refresh(habit)
+
+        response = HabitResponse.model_validate(habit)
+        assert response.graduated_at is not None
+        assert response.graduated_at == habit.graduated_at
+
+    def test_graduated_at_null_in_response_schema(self, db):
+        """HabitResponse shows None for non-graduated habits."""
+        from app.schemas.habits import HabitResponse
+
+        habit = _create_habit(db, scaffolding_status="accountable")
+        response = HabitResponse.model_validate(habit)
+        assert response.graduated_at is None

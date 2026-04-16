@@ -47,6 +47,7 @@ class HabitCreate(BaseModel):
     graduation_target: float | None = None
     graduation_threshold: int | None = None
     friction_score: int | None = None
+    position: int | None = None
 
     @field_validator("graduation_target")
     @classmethod
@@ -87,6 +88,7 @@ class HabitUpdate(BaseModel):
     graduation_target: float | None = None
     graduation_threshold: int | None = None
     friction_score: int | None = None
+    position: int | None = None
 
     @field_validator("graduation_target")
     @classmethod
@@ -123,6 +125,7 @@ class HabitResponse(BaseModel):
     graduation_target: float | None = None
     graduation_threshold: int | None = None
     friction_score: int | None = None
+    position: int | None = None
     re_scaffold_count: int
     last_frequency_changed_at: datetime | None = None
     graduated_at: datetime | None = None

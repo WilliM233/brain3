@@ -43,8 +43,8 @@ from app.services.graduation import (
     apply_frequency_step_down,
     evaluate_all_graduated_habits,
     evaluate_frequency_step_down,
-    evaluate_graduation,
     evaluate_graduated_habit_slip,
+    evaluate_graduation,
     get_stacking_recommendation,
     graduate_habit,
     re_scaffold_habit,
@@ -127,7 +127,10 @@ def evaluate_graduation_endpoint(
     if habit.scaffolding_status != "accountable":
         raise HTTPException(
             status_code=422,
-            detail=f"Habit scaffolding_status is '{habit.scaffolding_status}', must be 'accountable'",
+            detail=(
+                f"Habit scaffolding_status is '{habit.scaffolding_status}', "
+                "must be 'accountable'"
+            ),
         )
 
     return evaluate_graduation(db, habit_id)
@@ -167,7 +170,10 @@ def graduate_habit_endpoint(
     if habit.scaffolding_status != "accountable":
         raise HTTPException(
             status_code=422,
-            detail=f"Habit scaffolding_status is '{habit.scaffolding_status}', must be 'accountable'",
+            detail=(
+                f"Habit scaffolding_status is '{habit.scaffolding_status}', "
+                "must be 'accountable'"
+            ),
         )
 
     result = graduate_habit(db, habit_id, force=force)
@@ -178,7 +184,10 @@ def graduate_habit_endpoint(
             status_code=422,
             detail={
                 "message": "Habit is not eligible for graduation",
-                "evaluation": result.evaluation.model_dump(mode="json") if result.evaluation else None,
+                "evaluation": (
+                    result.evaluation.model_dump(mode="json")
+                    if result.evaluation else None
+                ),
             },
         )
 

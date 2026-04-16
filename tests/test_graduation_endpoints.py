@@ -19,9 +19,8 @@
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from app.models import Domain, Habit, HabitCompletion, NotificationQueue, Routine
-from tests.conftest import FAKE_UUID, make_habit
-
+from app.models import Domain, Habit, HabitCompletion, NotificationQueue, Routine  # noqa: I001
+from tests.conftest import FAKE_UUID
 
 # ---------------------------------------------------------------------------
 # Helpers

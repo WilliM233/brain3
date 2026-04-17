@@ -41,6 +41,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from alembic import command
+from alembic import config as alembic_config
 from app.config import settings
 from app.database import get_db
 from app.main import app
@@ -114,14 +116,11 @@ def pg_engine() -> Generator[Engine, None, None]:
     # point settings at the test DB before command.upgrade runs and restore
     # the originals after. Mutating settings in-place is safe: no live app
     # code path is bound to this module's lifecycle.
-    from alembic import command
-    from alembic.config import Config
-
     saved = (settings.POSTGRES_HOST, settings.POSTGRES_DB)
     settings.POSTGRES_HOST = _pg_host()
     settings.POSTGRES_DB = _TEST_DB_NAME
     try:
-        alembic_cfg = Config(str(_repo_root() / "alembic.ini"))
+        alembic_cfg = alembic_config.Config(str(_repo_root() / "alembic.ini"))
         alembic_cfg.set_main_option(
             "script_location", str(_repo_root() / "alembic"),
         )

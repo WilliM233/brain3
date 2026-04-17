@@ -1222,7 +1222,7 @@ class Rule(Base):
         nullable=False,
     )
     operator: Mapped[RuleOperator] = mapped_column(
-        SAEnum(RuleOperator, native_enum=False),
+        SAEnum(RuleOperator, native_enum=True),
         nullable=False,
     )
     threshold: Mapped[int] = mapped_column(Integer, nullable=False)

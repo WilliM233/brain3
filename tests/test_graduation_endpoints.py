@@ -564,3 +564,91 @@ class TestEvaluateAllSlipsEndpoint:
         assert data["evaluated_count"] == 2
         assert len(data["attention_needed"]) == 1
         assert data["attention_needed"][0]["habit_id"] == str(bad.id)
+
+
+# ===========================================================================
+# 10. Activity-log side effects — endpoint-layer coverage
+#
+# Service-layer tests in test_graduation.py already assert the activity-log
+# writes for each Stream G transition. These tests close the endpoint-to-
+# retrieval Layer Coverage blind spot (issue #180): drive the transition
+# through its HTTP endpoint, then query GET /api/activity?habit_id={id}
+# and assert the expected entry is returned.
+# ===========================================================================
+
+
+class TestActivityLogEndpointCoverage:
+
+    def test_graduate_evaluated_writes_activity_log(self, client, db):
+        """Evaluated graduation via endpoint is retrievable at GET /api/activity."""
+        habit = _eligible_habit(db)
+        resp = client.post(f"/api/habits/{habit.id}/graduate")
+        assert resp.status_code == 200
+
+        log_resp = client.get(f"/api/activity?habit_id={habit.id}")
+        assert log_resp.status_code == 200
+        entries = log_resp.json()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["action_type"] == "completed"
+        assert entry["habit_id"] == str(habit.id)
+        assert entry["notes"].startswith(f"Habit graduated: {habit.title}")
+        assert "(forced)" not in entry["notes"]
+
+    def test_graduate_forced_writes_activity_log(self, client, db):
+        """Forced graduation via endpoint is retrievable with '(forced)' label."""
+        habit = _create_habit(db)  # No notifications — not eligible
+        resp = client.post(
+            f"/api/habits/{habit.id}/graduate", json={"force": True},
+        )
+        assert resp.status_code == 200
+
+        log_resp = client.get(f"/api/activity?habit_id={habit.id}")
+        assert log_resp.status_code == 200
+        entries = log_resp.json()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["action_type"] == "completed"
+        assert entry["habit_id"] == str(habit.id)
+        assert entry["notes"].startswith(f"Habit graduated (forced): {habit.title}")
+
+    def test_step_down_frequency_writes_activity_log(self, client, db):
+        """Step-down via endpoint is retrievable at GET /api/activity."""
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(10):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+
+        resp = client.post(f"/api/habits/{habit.id}/step-down-frequency")
+        assert resp.status_code == 200
+
+        log_resp = client.get(f"/api/activity?habit_id={habit.id}")
+        assert log_resp.status_code == 200
+        entries = log_resp.json()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["action_type"] == "completed"
+        assert entry["habit_id"] == str(habit.id)
+        assert entry["notes"].startswith(
+            f"Notification frequency stepped down: {habit.title}",
+        )
+        assert "daily → every_other_day" in entry["notes"]
+
+    def test_re_scaffold_writes_activity_log(self, client, db):
+        """Re-scaffold via endpoint is retrievable with action_type=reflected."""
+        habit = _create_habit(
+            db, scaffolding_status="graduated", notification_frequency="graduated",
+            friction_score=1, graduation_window=None, graduation_target=None,
+            graduation_threshold=None,
+        )
+        resp = client.post(f"/api/habits/{habit.id}/re-scaffold")
+        assert resp.status_code == 200
+
+        log_resp = client.get(f"/api/activity?habit_id={habit.id}")
+        assert log_resp.status_code == 200
+        entries = log_resp.json()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["action_type"] == "reflected"
+        assert entry["habit_id"] == str(habit.id)
+        assert entry["notes"].startswith(f"Habit re-scaffolded: {habit.title}")
+        assert "re-scaffold #1" in entry["notes"]

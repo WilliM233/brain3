@@ -79,8 +79,8 @@ class GraduationStatusResponse(BaseModel):
     notification_frequency: str
     friction_score: int | None
     re_scaffold_count: int
-    introduced_at: str | None
-    days_since_introduction: int
+    accountable_since: str | None
+    days_accountable: int
     graduation_params: dict
     current_metrics: dict
     progress_summary: str
@@ -313,13 +313,13 @@ def graduation_status_endpoint(
             window, target, threshold, habit.re_scaffold_count,
         )
 
-    # Days since introduction
+    # Days accountable (days since tracking → accountable transition)
     from datetime import UTC, datetime
     now = datetime.now(tz=UTC)
-    if habit.introduced_at is not None:
-        days_since_introduction = (now.date() - habit.introduced_at).days
+    if habit.accountable_since is not None:
+        days_accountable = (now.date() - habit.accountable_since).days
     else:
-        days_since_introduction = 0
+        days_accountable = 0
 
     # Current metrics — only if accountable
     current_rate = 0.0
@@ -342,7 +342,7 @@ def graduation_status_endpoint(
     else:
         rate_pct = int(current_rate * 100)
         target_pct = int(target * 100)
-        remaining_days = max(0, threshold - days_since_introduction)
+        remaining_days = max(0, threshold - days_accountable)
         if remaining_days > 0:
             progress_summary = (
                 f"{rate_pct}% of the way to graduation target ({target_pct}%). "
@@ -379,8 +379,10 @@ def graduation_status_endpoint(
         "notification_frequency": habit.notification_frequency,
         "friction_score": habit.friction_score,
         "re_scaffold_count": habit.re_scaffold_count,
-        "introduced_at": str(habit.introduced_at) if habit.introduced_at else None,
-        "days_since_introduction": days_since_introduction,
+        "accountable_since": (
+            str(habit.accountable_since) if habit.accountable_since else None
+        ),
+        "days_accountable": days_accountable,
         "graduation_params": {
             "window_days": window,
             "target_rate": target,

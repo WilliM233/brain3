@@ -2507,3 +2507,208 @@ class TestHabitPositionField:
 
         assert result.suggested_next is not None
         assert result.suggested_next.habit_name == "First Created"
+
+
+# ===========================================================================
+# [2A-Bug-03] D1 regression — scalar defaults removed on graduation override
+# columns; NULL-means-inherit; friction-aware resolver fires end-to-end.
+#
+# Also covers Packet 5 Finding #8 Observation 1 absorption: a never-overridden
+# accountable habit must return graduation_params.source == "friction_default"
+# from GET /api/habits/{id}/graduation-status. Pre-D1 the scalar defaults made
+# the friction_default branch unreachable — every habit was labeled per_habit.
+# ===========================================================================
+
+
+class TestGraduationOverrideDefaultsD1:
+
+    def test_post_habit_without_overrides_creates_null_columns(self, client):
+        """New habit with no override payload has NULL in all three columns."""
+        resp = client.post(
+            "/api/habits",
+            json={"title": "Friction 3", "frequency": "daily", "friction_score": 3},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["graduation_window"] is None
+        assert body["graduation_target"] is None
+        assert body["graduation_threshold"] is None
+
+    def test_friction_3_habit_resolves_to_friction_3_defaults(self, client):
+        """Friction-3 habit without overrides resolves to (45, 0.85, 45)."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Friction 3",
+                "frequency": "daily",
+                "friction_score": 3,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        assert status.status_code == 200
+        params = status.json()["graduation_params"]
+        assert params["window_days"] == 45
+        assert params["target_rate"] == 0.85
+        assert params["threshold_days"] == 45
+
+    def test_friction_4_habit_resolves_to_friction_4_defaults(self, client):
+        """Friction-4 habit without overrides resolves to (60, 0.80, 60)."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Friction 4",
+                "frequency": "daily",
+                "friction_score": 4,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        params = status.json()["graduation_params"]
+        assert params["window_days"] == 60
+        assert params["target_rate"] == 0.80
+        assert params["threshold_days"] == 60
+
+    def test_friction_5_habit_resolves_to_friction_5_defaults(self, client):
+        """Friction-5 habit without overrides resolves to (60, 0.80, 60)."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Friction 5",
+                "frequency": "daily",
+                "friction_score": 5,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        params = status.json()["graduation_params"]
+        assert params["window_days"] == 60
+        assert params["target_rate"] == 0.80
+        assert params["threshold_days"] == 60
+
+    def test_friction_1_habit_resolves_to_friction_1_defaults(self, client):
+        """Friction-1 habit without overrides resolves to (30, 0.85, 30)."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Friction 1",
+                "frequency": "daily",
+                "friction_score": 1,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        params = status.json()["graduation_params"]
+        assert params["window_days"] == 30
+        assert params["target_rate"] == 0.85
+        assert params["threshold_days"] == 30
+
+    def test_user_override_via_post_is_preserved(self, client, db):
+        """POST with explicit graduation_window=50 stores 50 and resolver returns 50."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Override",
+                "frequency": "daily",
+                "friction_score": 5,  # would resolve to 60 without override
+                "graduation_window": 50,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+        assert resp.json()["graduation_window"] == 50
+
+        # Column is the override value, not the friction default.
+        habit = db.query(Habit).filter(Habit.id == uuid.UUID(habit_id)).one()
+        assert habit.graduation_window == 50
+
+        # Other columns remain NULL (unset by caller).
+        assert habit.graduation_target is None
+        assert habit.graduation_threshold is None
+
+        window, target, threshold = resolve_graduation_params(habit)
+        assert window == 50
+        assert target == 0.80  # friction-5 default for unset target
+        assert threshold == 60  # friction-5 default for unset threshold
+
+    def test_re_scaffold_compounds_against_friction_5_baseline(self, client, db):
+        """Friction-5 habit re-scaffolded once evaluates at 75/0.85/75, not 37/0.90/37."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Friction 5",
+                "frequency": "daily",
+                "friction_score": 5,
+                "scaffolding_status": "graduated",
+                "notification_frequency": "graduated",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        re_scaffold = client.post(f"/api/habits/{habit_id}/re-scaffold")
+        assert re_scaffold.status_code == 200
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        params = status.json()["graduation_params"]
+        # 25% tightening on friction-5 baseline: int(60*1.25)=75, min(0.80+0.05, 0.95)≈0.85
+        assert params["window_days"] == 75
+        assert params["target_rate"] == pytest.approx(0.85)
+        assert params["threshold_days"] == 75
+
+    def test_graduation_status_source_is_friction_default_when_no_overrides(self, client):
+        """Never-overridden habit labels graduation_params.source = 'friction_default'.
+
+        Absorbs Packet 5 Finding #8 Observation 1. Pre-D1 the scalar defaults
+        on the override columns made the any-is-not-None check always True, so
+        the friction_default branch at routers/graduation.py:305-309 was
+        unreachable. Post-D1 the columns are NULL by default and the branch
+        fires correctly.
+        """
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Un-overridden",
+                "frequency": "daily",
+                "friction_score": 3,
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        assert status.status_code == 200
+        assert status.json()["graduation_params"]["source"] == "friction_default"
+
+    def test_graduation_status_source_is_per_habit_when_any_override(self, client):
+        """Explicitly-overridden habit labels graduation_params.source = 'per_habit'."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Overridden",
+                "frequency": "daily",
+                "friction_score": 3,
+                "graduation_window": 50,  # single column override is enough
+                "scaffolding_status": "accountable",
+                "introduced_at": date.today().isoformat(),
+            },
+        )
+        habit_id = resp.json()["id"]
+
+        status = client.get(f"/api/habits/{habit_id}/graduation-status")
+        assert status.status_code == 200
+        assert status.json()["graduation_params"]["source"] == "per_habit"

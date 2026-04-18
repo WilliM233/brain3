@@ -581,12 +581,11 @@ class Habit(Base):
         server_default="tracking",
     )
     introduced_at: Mapped[date | None] = mapped_column(Date)
-    graduation_window: Mapped[int | None] = mapped_column(Integer, default=30)
+    graduation_window: Mapped[int | None] = mapped_column(Integer)
     graduation_target: Mapped[float | None] = mapped_column(
         Numeric(precision=3, scale=2),
-        default=0.85,
     )
-    graduation_threshold: Mapped[int | None] = mapped_column(Integer, default=30)
+    graduation_threshold: Mapped[int | None] = mapped_column(Integer)
     friction_score: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int | None] = mapped_column(Integer)
     re_scaffold_count: Mapped[int] = mapped_column(

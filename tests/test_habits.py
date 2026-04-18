@@ -86,7 +86,7 @@ class TestCreateHabit:
                 "description": "10 min mindfulness",
                 "notification_frequency": "daily",
                 "scaffolding_status": "accountable",
-                "introduced_at": "2026-04-01",
+                "accountable_since": "2026-04-01",
                 "graduation_window": 60,
                 "graduation_target": 0.9,
                 "graduation_threshold": 45,
@@ -97,7 +97,7 @@ class TestCreateHabit:
         assert body["description"] == "10 min mindfulness"
         assert body["notification_frequency"] == "daily"
         assert body["scaffolding_status"] == "accountable"
-        assert body["introduced_at"] == "2026-04-01"
+        assert body["accountable_since"] == "2026-04-01"
         assert body["graduation_window"] == 60
         assert body["graduation_target"] == 0.9
         assert body["graduation_threshold"] == 45
@@ -381,14 +381,14 @@ class TestUpdateHabit:
 
 
 # ---------------------------------------------------------------------------
-# [2G-Gap-01] Auto-populate introduced_at on transition to accountable
+# [2G-Gap-01] Auto-populate accountable_since on transition to accountable
 # ---------------------------------------------------------------------------
 
 
 class TestIntroducedAtAutoPopulate:
 
-    def test_create_accountable_without_introduced_at_sets_today(self, client):
-        """POST with scaffolding_status=accountable and no introduced_at → today."""
+    def test_create_accountable_without_accountable_since_sets_today(self, client):
+        """POST with scaffolding_status=accountable and no accountable_since → today."""
         resp = client.post(
             "/api/habits",
             json={
@@ -398,24 +398,24 @@ class TestIntroducedAtAutoPopulate:
             },
         )
         assert resp.status_code == 201
-        assert resp.json()["introduced_at"] == date.today().isoformat()
+        assert resp.json()["accountable_since"] == date.today().isoformat()
 
-    def test_create_accountable_with_explicit_introduced_at_respected(self, client):
-        """POST with explicit introduced_at is never overwritten."""
+    def test_create_accountable_with_explicit_accountable_since_respected(self, client):
+        """POST with explicit accountable_since is never overwritten."""
         resp = client.post(
             "/api/habits",
             json={
                 "title": "Meditate",
                 "frequency": "daily",
                 "scaffolding_status": "accountable",
-                "introduced_at": "2026-01-15",
+                "accountable_since": "2026-01-15",
             },
         )
         assert resp.status_code == 201
-        assert resp.json()["introduced_at"] == "2026-01-15"
+        assert resp.json()["accountable_since"] == "2026-01-15"
 
-    def test_create_tracking_leaves_introduced_at_null(self, client):
-        """POST with scaffolding_status=tracking does not auto-set introduced_at."""
+    def test_create_tracking_leaves_accountable_since_null(self, client):
+        """POST with scaffolding_status=tracking does not auto-set accountable_since."""
         resp = client.post(
             "/api/habits",
             json={
@@ -425,12 +425,12 @@ class TestIntroducedAtAutoPopulate:
             },
         )
         assert resp.status_code == 201
-        assert resp.json()["introduced_at"] is None
+        assert resp.json()["accountable_since"] is None
 
     def test_patch_transition_to_accountable_sets_today(self, client):
         """PATCH transition tracking → accountable with no prior value → today."""
         habit = make_habit(client, scaffolding_status="tracking")
-        assert habit["introduced_at"] is None
+        assert habit["accountable_since"] is None
 
         resp = client.patch(
             f"/api/habits/{habit['id']}",
@@ -439,51 +439,51 @@ class TestIntroducedAtAutoPopulate:
         assert resp.status_code == 200
         body = resp.json()
         assert body["scaffolding_status"] == "accountable"
-        assert body["introduced_at"] == date.today().isoformat()
+        assert body["accountable_since"] == date.today().isoformat()
 
-    def test_patch_transition_with_explicit_introduced_at_respected(self, client):
-        """PATCH transition with explicit introduced_at uses the provided value."""
+    def test_patch_transition_with_explicit_accountable_since_respected(self, client):
+        """PATCH transition with explicit accountable_since uses the provided value."""
         habit = make_habit(client, scaffolding_status="tracking")
         resp = client.patch(
             f"/api/habits/{habit['id']}",
             json={
                 "scaffolding_status": "accountable",
-                "introduced_at": "2026-03-01",
+                "accountable_since": "2026-03-01",
             },
         )
         assert resp.status_code == 200
-        assert resp.json()["introduced_at"] == "2026-03-01"
+        assert resp.json()["accountable_since"] == "2026-03-01"
 
-    def test_patch_unchanged_scaffolding_does_not_touch_introduced_at(self, client):
-        """PATCH that doesn't change scaffolding_status never modifies introduced_at."""
+    def test_patch_unchanged_scaffolding_does_not_touch_accountable_since(self, client):
+        """PATCH that doesn't change scaffolding_status never modifies accountable_since."""
         habit = make_habit(client, scaffolding_status="tracking")
         resp = client.patch(
             f"/api/habits/{habit['id']}",
             json={"title": "Rename only"},
         )
         assert resp.status_code == 200
-        assert resp.json()["introduced_at"] is None
+        assert resp.json()["accountable_since"] is None
 
     def test_patch_already_accountable_with_value_not_overwritten(self, client):
-        """PATCH on a habit already accountable with introduced_at set never mutates it."""
+        """PATCH on a habit already accountable with accountable_since set never mutates it."""
         resp = client.post(
             "/api/habits",
             json={
                 "title": "Meditate",
                 "frequency": "daily",
                 "scaffolding_status": "accountable",
-                "introduced_at": "2026-02-20",
+                "accountable_since": "2026-02-20",
             },
         )
         assert resp.status_code == 201
         habit = resp.json()
 
-        # PATCH something unrelated — introduced_at must survive untouched.
+        # PATCH something unrelated — accountable_since must survive untouched.
         resp = client.patch(
             f"/api/habits/{habit['id']}", json={"title": "Meditate (renamed)"},
         )
         assert resp.status_code == 200
-        assert resp.json()["introduced_at"] == "2026-02-20"
+        assert resp.json()["accountable_since"] == "2026-02-20"
 
         # Re-sending scaffolding_status=accountable on a habit already at that
         # value + with a date set must also leave the date unchanged.
@@ -492,7 +492,7 @@ class TestIntroducedAtAutoPopulate:
             json={"scaffolding_status": "accountable"},
         )
         assert resp.status_code == 200
-        assert resp.json()["introduced_at"] == "2026-02-20"
+        assert resp.json()["accountable_since"] == "2026-02-20"
 
 
 # ---------------------------------------------------------------------------

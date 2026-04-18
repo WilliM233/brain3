@@ -75,7 +75,7 @@ def _create_habit(db, **overrides) -> Habit:
         "frequency": "daily",
         "notification_frequency": "daily",
         "scaffolding_status": "accountable",
-        "introduced_at": date.today() - timedelta(days=60),
+        "accountable_since": date.today() - timedelta(days=60),
     }
     defaults.update(constructor_overrides)
     habit = Habit(**defaults)
@@ -279,7 +279,7 @@ class TestReScaffoldTightening:
 class TestEvaluateGraduation:
     def test_eligible_habit(self, db):
         """Habit that meets both rate and threshold is eligible."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
         # 10 notifications, 9 "Already done" = 90% rate
         for i in range(9):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
@@ -298,7 +298,7 @@ class TestEvaluateGraduation:
 
     def test_ineligible_rate_too_low(self, db):
         """Habit with rate below target is not eligible."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
         # 10 notifications, 5 "Already done" = 50%
         for i in range(5):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
@@ -314,7 +314,7 @@ class TestEvaluateGraduation:
 
     def test_ineligible_not_enough_time(self, db):
         """Habit introduced recently (below threshold) is not eligible."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=10))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=10))
         for i in range(10):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
 
@@ -323,11 +323,11 @@ class TestEvaluateGraduation:
         assert result.eligible is False
         assert result.meets_rate is True
         assert result.meets_threshold is False
-        assert any("days since introduction" in r for r in result.blocking_reasons)
+        assert any("days accountable" in r for r in result.blocking_reasons)
 
     def test_ineligible_no_notification_data(self, db):
         """Habit with no notifications in window is not eligible."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
 
         result = evaluate_graduation(db, habit.id)
 
@@ -357,7 +357,7 @@ class TestEvaluateGraduation:
         """Habit with re_scaffold_count > 0 has tightened criteria."""
         habit = _create_habit(
             db,
-            introduced_at=date.today() - timedelta(days=60),
+            accountable_since=date.today() - timedelta(days=60),
             re_scaffold_count=1,
             friction_score=1,
             graduation_window=None,
@@ -381,7 +381,7 @@ class TestEvaluateGraduation:
         """Same data that passes without re-scaffold fails with re_scaffold_count=1."""
         habit = _create_habit(
             db,
-            introduced_at=date.today() - timedelta(days=60),
+            accountable_since=date.today() - timedelta(days=60),
             re_scaffold_count=1,
             friction_score=1,
             graduation_window=None,
@@ -403,7 +403,7 @@ class TestEvaluateGraduation:
 
     def test_expired_notifications_counted(self, db):
         """Expired (unanswered) notifications are included in total count."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
         for i in range(8):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
         # 2 expired notifications (no response)
@@ -418,7 +418,7 @@ class TestEvaluateGraduation:
 
     def test_pending_notifications_excluded(self, db):
         """Pending/delivered notifications are NOT included in evaluation."""
-        habit = _create_habit(db, introduced_at=date.today() - timedelta(days=60))
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
         for i in range(10):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
         # These should be excluded
@@ -433,7 +433,7 @@ class TestEvaluateGraduation:
         """Notifications older than the window are not counted."""
         habit = _create_habit(
             db,
-            introduced_at=date.today() - timedelta(days=120),
+            accountable_since=date.today() - timedelta(days=120),
             friction_score=1,  # 30-day window
             graduation_window=None,
             graduation_target=None,
@@ -457,15 +457,15 @@ class TestEvaluateGraduation:
         with pytest.raises(ValueError, match="not found"):
             evaluate_graduation(db, uuid.uuid4())
 
-    def test_habit_with_no_introduced_at(self, db):
-        """Habit with no introduced_at gets 0 days_since_introduction."""
-        habit = _create_habit(db, introduced_at=None)
+    def test_habit_with_no_accountable_since(self, db):
+        """Habit with no accountable_since gets 0 days_accountable."""
+        habit = _create_habit(db, accountable_since=None)
         for i in range(10):
             _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
 
         result = evaluate_graduation(db, habit.id)
 
-        assert result.days_since_introduction == 0
+        assert result.days_accountable == 0
         assert result.meets_threshold is False
 
 
@@ -555,7 +555,7 @@ class TestGraduateHabit:
     def _eligible_habit(self, db, **overrides) -> Habit:
         """Create a habit that meets graduation criteria."""
         defaults = {
-            "introduced_at": date.today() - timedelta(days=60),
+            "accountable_since": date.today() - timedelta(days=60),
             "scaffolding_status": "accountable",
             "notification_frequency": "daily",
             "status": "active",
@@ -571,7 +571,7 @@ class TestGraduateHabit:
     def _ineligible_habit(self, db, **overrides) -> Habit:
         """Create a habit that does NOT meet graduation criteria (low rate)."""
         defaults = {
-            "introduced_at": date.today() - timedelta(days=60),
+            "accountable_since": date.today() - timedelta(days=60),
             "scaffolding_status": "accountable",
             "notification_frequency": "daily",
             "status": "active",
@@ -1302,7 +1302,7 @@ class TestEvaluateGraduatedHabitSlip:
             "scaffolding_status": "graduated",
             "notification_frequency": "graduated",
             "status": "active",
-            "introduced_at": date.today() - timedelta(days=90),
+            "accountable_since": date.today() - timedelta(days=90),
             "routine_id": routine_id,
         }
         defaults.update(overrides)
@@ -1608,7 +1608,7 @@ class TestEvaluateAllGraduatedHabits:
             scaffolding_status="graduated",
             notification_frequency="graduated",
             status="active",
-            introduced_at=date.today() - timedelta(days=90),
+            accountable_since=date.today() - timedelta(days=90),
         )
         for i in range(5):
             _create_completion(db, good.id, days_ago=i + 1)
@@ -1619,7 +1619,7 @@ class TestEvaluateAllGraduatedHabits:
             scaffolding_status="graduated",
             notification_frequency="graduated",
             status="active",
-            introduced_at=date.today() - timedelta(days=90),
+            accountable_since=date.today() - timedelta(days=90),
             title="Slipping Habit",
         )
 
@@ -1673,7 +1673,7 @@ class TestEvaluateAllGraduatedHabits:
                 scaffolding_status="graduated",
                 notification_frequency="graduated",
                 status="active",
-                introduced_at=date.today() - timedelta(days=90),
+                accountable_since=date.today() - timedelta(days=90),
                 title=f"Slipping {i}",
             )
 
@@ -1694,7 +1694,7 @@ class TestReScaffoldHabit:
             "scaffolding_status": "graduated",
             "notification_frequency": "graduated",
             "status": "active",
-            "introduced_at": date.today() - timedelta(days=90),
+            "accountable_since": date.today() - timedelta(days=90),
             "friction_score": 1,
             "graduation_window": None,
             "graduation_target": None,
@@ -1910,7 +1910,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="accountable",
             title="Stable Habit",
             notification_frequency="daily",
-            introduced_at=date.today() - timedelta(days=30),
+            accountable_since=date.today() - timedelta(days=30),
         )
         # Create 10 notifications: 7 "Already done" = 70% rate
         for i in range(7):
@@ -1945,7 +1945,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="accountable",
             title="Weekly Habit",
             notification_frequency="weekly",
-            introduced_at=date.today() - timedelta(days=30),
+            accountable_since=date.today() - timedelta(days=30),
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -1964,7 +1964,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="accountable",
             title="Consistent Habit",
             notification_frequency="daily",
-            introduced_at=date.today() - timedelta(days=20),
+            accountable_since=date.today() - timedelta(days=20),
         )
         # No notifications (rate would be 0), but 7 completions in last 7 days
         for i in range(7):
@@ -1986,7 +1986,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="accountable",
             title="Struggling Habit",
             notification_frequency="daily",
-            introduced_at=date.today() - timedelta(days=10),
+            accountable_since=date.today() - timedelta(days=10),
         )
         # 10 notifications: 3 "Already done" = 30% rate (below 60%)
         for i in range(3):
@@ -2021,7 +2021,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="tracking",
             status="paused",
             title="Paused Tracking",
-            introduced_at=date.today() - timedelta(days=30),
+            accountable_since=date.today() - timedelta(days=30),
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -2031,8 +2031,8 @@ class TestGetStackingRecommendation:
         assert result.suggested_next.habit_name == "Paused Tracking"
         assert result.suggested_next.source == "paused"
 
-    def test_paused_ordered_by_introduced_at(self, db):
-        """Multiple paused habits: oldest introduced_at is suggested first."""
+    def test_paused_ordered_by_accountable_since(self, db):
+        """Multiple paused habits: oldest accountable_since is suggested first."""
         routine = _create_routine(db)
 
         _create_habit(
@@ -2041,7 +2041,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="tracking",
             status="paused",
             title="Newer Paused",
-            introduced_at=date.today() - timedelta(days=5),
+            accountable_since=date.today() - timedelta(days=5),
         )
         _create_habit(
             db,
@@ -2049,7 +2049,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="tracking",
             status="paused",
             title="Older Paused",
-            introduced_at=date.today() - timedelta(days=30),
+            accountable_since=date.today() - timedelta(days=30),
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -2156,7 +2156,7 @@ class TestGetStackingRecommendation:
             scaffolding_status="accountable",
             title="Needs Work",
             notification_frequency="daily",
-            introduced_at=date.today() - timedelta(days=5),
+            accountable_since=date.today() - timedelta(days=5),
         )
         for i in range(6):
             _create_notification(db, blocking.id, "Done now", "responded", days_ago=i + 1)
@@ -2182,7 +2182,7 @@ class TestGraduatedAtTimestamp:
         defaults = {
             "scaffolding_status": "accountable",
             "notification_frequency": "daily",
-            "introduced_at": date.today() - timedelta(days=60),
+            "accountable_since": date.today() - timedelta(days=60),
             "friction_score": 1,
         }
         defaults.update(overrides)
@@ -2216,7 +2216,7 @@ class TestGraduatedAtTimestamp:
             db,
             scaffolding_status="accountable",
             notification_frequency="daily",
-            introduced_at=date.today() - timedelta(days=5),
+            accountable_since=date.today() - timedelta(days=5),
         )
 
         graduate_habit(db, habit.id, force=True)
@@ -2254,7 +2254,7 @@ class TestGraduatedAtTimestamp:
             db,
             scaffolding_status="graduated",
             notification_frequency="graduated",
-            introduced_at=date.today() - timedelta(days=90),
+            accountable_since=date.today() - timedelta(days=90),
         )
         # Set graduated_at to 20 days ago
         grad_time = datetime.now(tz=UTC) - timedelta(days=20)
@@ -2275,7 +2275,7 @@ class TestGraduatedAtTimestamp:
             db,
             scaffolding_status="graduated",
             notification_frequency="graduated",
-            introduced_at=date.today() - timedelta(days=90),
+            accountable_since=date.today() - timedelta(days=90),
         )
         # Graduate 15 days ago
         grad_time = datetime.now(tz=UTC) - timedelta(days=15)
@@ -2301,7 +2301,7 @@ class TestGraduatedAtTimestamp:
             db,
             scaffolding_status="graduated",
             notification_frequency="graduated",
-            introduced_at=date.today() - timedelta(days=90),
+            accountable_since=date.today() - timedelta(days=90),
         )
         # graduated_at is None by default (no migration backfill)
         assert habit.graduated_at is None
@@ -2429,8 +2429,8 @@ class TestHabitPositionField:
         assert result.suggested_next is not None
         assert result.suggested_next.habit_name == "Has Position"
 
-    def test_paused_ordered_by_position_then_introduced_at(self, db):
-        """Paused tracking habits sorted by position first, then introduced_at."""
+    def test_paused_ordered_by_position_then_accountable_since(self, db):
+        """Paused tracking habits sorted by position first, then accountable_since."""
         routine = _create_routine(db)
 
         _create_habit(
@@ -2440,7 +2440,7 @@ class TestHabitPositionField:
             status="paused",
             title="Paused Pos 3",
             position=3,
-            introduced_at=date.today() - timedelta(days=60),
+            accountable_since=date.today() - timedelta(days=60),
         )
         _create_habit(
             db,
@@ -2449,7 +2449,7 @@ class TestHabitPositionField:
             status="paused",
             title="Paused Pos 1",
             position=1,
-            introduced_at=date.today() - timedelta(days=5),
+            accountable_since=date.today() - timedelta(days=5),
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -2458,8 +2458,8 @@ class TestHabitPositionField:
         assert result.suggested_next.habit_name == "Paused Pos 1"
         assert result.suggested_next.source == "paused"
 
-    def test_paused_null_position_falls_back_to_introduced_at(self, db):
-        """Paused habits with null position fall back to introduced_at ordering."""
+    def test_paused_null_position_falls_back_to_accountable_since(self, db):
+        """Paused habits with null position fall back to accountable_since ordering."""
         routine = _create_routine(db)
 
         _create_habit(
@@ -2468,7 +2468,7 @@ class TestHabitPositionField:
             scaffolding_status="tracking",
             status="paused",
             title="Newer Paused",
-            introduced_at=date.today() - timedelta(days=5),
+            accountable_since=date.today() - timedelta(days=5),
         )
         _create_habit(
             db,
@@ -2476,7 +2476,7 @@ class TestHabitPositionField:
             scaffolding_status="tracking",
             status="paused",
             title="Older Paused",
-            introduced_at=date.today() - timedelta(days=30),
+            accountable_since=date.today() - timedelta(days=30),
         )
 
         result = get_stacking_recommendation(db, routine.id)
@@ -2543,7 +2543,7 @@ class TestGraduationOverrideDefaultsD1:
                 "frequency": "daily",
                 "friction_score": 3,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2564,7 +2564,7 @@ class TestGraduationOverrideDefaultsD1:
                 "frequency": "daily",
                 "friction_score": 4,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2584,7 +2584,7 @@ class TestGraduationOverrideDefaultsD1:
                 "frequency": "daily",
                 "friction_score": 5,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2604,7 +2604,7 @@ class TestGraduationOverrideDefaultsD1:
                 "frequency": "daily",
                 "friction_score": 1,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2625,7 +2625,7 @@ class TestGraduationOverrideDefaultsD1:
                 "friction_score": 5,  # would resolve to 60 without override
                 "graduation_window": 50,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2654,7 +2654,7 @@ class TestGraduationOverrideDefaultsD1:
                 "friction_score": 5,
                 "scaffolding_status": "graduated",
                 "notification_frequency": "graduated",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2685,7 +2685,7 @@ class TestGraduationOverrideDefaultsD1:
                 "frequency": "daily",
                 "friction_score": 3,
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]
@@ -2704,7 +2704,7 @@ class TestGraduationOverrideDefaultsD1:
                 "friction_score": 3,
                 "graduation_window": 50,  # single column override is enough
                 "scaffolding_status": "accountable",
-                "introduced_at": date.today().isoformat(),
+                "accountable_since": date.today().isoformat(),
             },
         )
         habit_id = resp.json()["id"]

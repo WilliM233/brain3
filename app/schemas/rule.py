@@ -191,3 +191,29 @@ class RuleEvaluationResultResponse(BaseModel):
     reason: str
     notifications_created: int
     entities_evaluated: int
+
+
+class RuleEvaluationSummary(BaseModel):
+    """Run-level totals for an evaluation cycle.
+
+    Per-reason counts mirror the `reason` enum from the service-layer
+    `RuleEvaluationResult`, so consumers can join a result back to its bucket
+    without re-deriving the schema. `total_rules_evaluated` is the sum of all
+    per-reason buckets and equals `len(results)`.
+    """
+
+    total_rules_evaluated: int
+    fired: int
+    cooldown: int
+    condition_not_met: int
+    no_matching_entities: int
+    error: int
+    total_notifications_created: int
+    evaluated_at: datetime
+
+
+class RuleEvaluationRunResponse(BaseModel):
+    """Envelope for POST /api/rules/evaluate — wraps results with a summary."""
+
+    summary: RuleEvaluationSummary
+    results: list[RuleEvaluationResultResponse]

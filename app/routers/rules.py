@@ -17,6 +17,7 @@
 """CRUD and evaluation endpoints for Rules."""
 
 from dataclasses import asdict
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,6 +30,8 @@ from app.schemas.rule import (
     RuleCreate,
     RuleEntityType,
     RuleEvaluationResultResponse,
+    RuleEvaluationRunResponse,
+    RuleEvaluationSummary,
     RuleListResponse,
     RuleRead,
     RuleUpdate,
@@ -92,13 +95,47 @@ def list_rules(
 # POST — evaluate all rules
 # ---------------------------------------------------------------------------
 
-@router.post("/evaluate", response_model=list[RuleEvaluationResultResponse])
+@router.post("/evaluate", response_model=RuleEvaluationRunResponse)
 def evaluate_all_rules(
     db: Session = Depends(get_db),
-) -> list[dict]:
-    """Evaluate all enabled rules and create notifications for matches."""
+) -> RuleEvaluationRunResponse:
+    """Evaluate all enabled rules and create notifications for matches.
+
+    Returns a run envelope with a per-reason summary alongside the per-rule
+    results. The service-layer `evaluate_rules` function still returns a bare
+    list — summary aggregation lives in the handler so the scheduler import
+    path (Stream C) is unaffected.
+    """
+    evaluated_at = datetime.now(tz=UTC)
     results = evaluate_rules(db)
-    return [asdict(r) for r in results]
+
+    counts = {
+        "fired": 0,
+        "cooldown": 0,
+        "condition_not_met": 0,
+        "no_matching_entities": 0,
+        "error": 0,
+    }
+    notifications_created = 0
+    for r in results:
+        if r.reason in counts:
+            counts[r.reason] += 1
+        notifications_created += r.notifications_created
+
+    summary = RuleEvaluationSummary(
+        total_rules_evaluated=len(results),
+        fired=counts["fired"],
+        cooldown=counts["cooldown"],
+        condition_not_met=counts["condition_not_met"],
+        no_matching_entities=counts["no_matching_entities"],
+        error=counts["error"],
+        total_notifications_created=notifications_created,
+        evaluated_at=evaluated_at,
+    )
+    return RuleEvaluationRunResponse(
+        summary=summary,
+        results=[RuleEvaluationResultResponse(**asdict(r)) for r in results],
+    )
 
 
 # ---------------------------------------------------------------------------

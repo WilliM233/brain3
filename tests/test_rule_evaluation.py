@@ -789,9 +789,9 @@ class TestNotificationProperties:
 
 
 class TestEvaluateAllEndpoint:
-    """POST /api/rules/evaluate"""
+    """POST /api/rules/evaluate — envelope shape and summary aggregation."""
 
-    def test_evaluate_all_returns_results(self, client, db):
+    def test_evaluate_all_returns_envelope_with_results(self, client, db):
         _make_habit_orm(db, current_streak=0, best_streak=10)
         _make_rule(
             db,
@@ -803,15 +803,25 @@ class TestEvaluateAllEndpoint:
         resp = client.post(f"{RULES_URL}/evaluate")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["fired"] is True
-        assert data[0]["reason"] == "fired"
-        assert data[0]["notifications_created"] == 1
+        assert set(data.keys()) == {"summary", "results"}
+        assert len(data["results"]) == 1
+        assert data["results"][0]["fired"] is True
+        assert data["results"][0]["reason"] == "fired"
+        assert data["results"][0]["notifications_created"] == 1
 
     def test_evaluate_all_empty_when_no_rules(self, client):
         resp = client.post(f"{RULES_URL}/evaluate")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["results"] == []
+        summary = data["summary"]
+        assert summary["total_rules_evaluated"] == 0
+        assert summary["fired"] == 0
+        assert summary["cooldown"] == 0
+        assert summary["condition_not_met"] == 0
+        assert summary["no_matching_entities"] == 0
+        assert summary["error"] == 0
+        assert summary["total_notifications_created"] == 0
 
     def test_evaluate_all_skips_disabled_rules(self, client, db):
         _make_habit_orm(db, current_streak=0, best_streak=10)
@@ -819,7 +829,158 @@ class TestEvaluateAllEndpoint:
 
         resp = client.post(f"{RULES_URL}/evaluate")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["results"] == []
+        assert data["summary"]["total_rules_evaluated"] == 0
+
+
+class TestEvaluateAllEnvelopeSummary:
+    """Summary fields cover the per-reason breakdown and the sum invariant."""
+
+    _REASON_KEYS = ("fired", "cooldown", "condition_not_met",
+                    "no_matching_entities", "error")
+
+    def test_summary_fields_present_and_typed(self, client):
+        resp = client.post(f"{RULES_URL}/evaluate")
+        summary = resp.json()["summary"]
+        for key in (
+            "total_rules_evaluated",
+            *self._REASON_KEYS,
+            "total_notifications_created",
+            "evaluated_at",
+        ):
+            assert key in summary, f"missing summary key: {key}"
+        for key in ("total_rules_evaluated", *self._REASON_KEYS,
+                    "total_notifications_created"):
+            assert isinstance(summary[key], int)
+        # evaluated_at parses as ISO 8601
+        datetime.fromisoformat(summary["evaluated_at"].replace("Z", "+00:00"))
+
+    def test_summary_counts_match_per_reason_results(self, client, db):
+        # fired
+        _make_habit_orm(db, current_streak=0, best_streak=10)
+        _make_rule(
+            db,
+            name="Fires",
+            metric=RuleMetric.streak_length,
+            threshold=7,
+            notification_type="pattern_observation",
+        )
+        # cooldown — last_triggered recent, cooldown still active
+        _make_rule(
+            db,
+            name="In cooldown",
+            metric=RuleMetric.streak_length,
+            threshold=7,
+            cooldown_hours=24,
+            last_triggered_at=datetime.now(tz=UTC) - timedelta(hours=1),
+            notification_type="pattern_observation",
+        )
+        # condition_not_met — habit exists but no skips
+        _make_habit_orm(db, title="Quiet habit")
+        _make_rule(
+            db,
+            name="Won't meet",
+            metric=RuleMetric.consecutive_skips,
+            threshold=99,
+        )
+        # no_matching_entities — task rule, no tasks
+        _make_rule(
+            db,
+            name="No tasks",
+            entity_type=RuleEntityType.task,
+            metric=RuleMetric.days_untouched,
+            threshold=14,
+            notification_type="stale_work_nudge",
+        )
+
+        resp = client.post(f"{RULES_URL}/evaluate")
+        data = resp.json()
+        summary = data["summary"]
+        results = data["results"]
+
+        # Counts derived from results match summary
+        for key in self._REASON_KEYS:
+            assert summary[key] == sum(1 for r in results if r["reason"] == key), (
+                f"summary[{key}] != count of results with reason={key}"
+            )
+
+    def test_summary_sum_invariant(self, client, db):
+        """sum of per-reason buckets == total_rules_evaluated == len(results)."""
+        _make_habit_orm(db, current_streak=0, best_streak=10)
+        _make_rule(
+            db,
+            metric=RuleMetric.streak_length,
+            threshold=7,
+            notification_type="pattern_observation",
+        )
+        _make_rule(
+            db,
+            entity_type=RuleEntityType.task,
+            metric=RuleMetric.days_untouched,
+            threshold=14,
+            notification_type="stale_work_nudge",
+        )
+
+        resp = client.post(f"{RULES_URL}/evaluate")
+        data = resp.json()
+        summary = data["summary"]
+
+        bucket_total = sum(summary[k] for k in self._REASON_KEYS)
+        assert bucket_total == summary["total_rules_evaluated"]
+        assert bucket_total == len(data["results"])
+
+    def test_summary_total_notifications_created_matches_results_sum(
+        self, client, db,
+    ):
+        # Two habits, both will fire on the same global rule
+        _make_habit_orm(db, title="A", current_streak=0, best_streak=10)
+        _make_habit_orm(db, title="B", current_streak=0, best_streak=10)
+        _make_rule(
+            db,
+            metric=RuleMetric.streak_length,
+            threshold=7,
+            notification_type="pattern_observation",
+        )
+
+        resp = client.post(f"{RULES_URL}/evaluate")
+        data = resp.json()
+        per_result = sum(r["notifications_created"] for r in data["results"])
+        assert data["summary"]["total_notifications_created"] == per_result
+        assert per_result == 2  # one notification per matching habit
+
+    def test_summary_evaluated_at_set_to_handler_call_time(self, client):
+        before = datetime.now(tz=UTC)
+        resp = client.post(f"{RULES_URL}/evaluate")
+        after = datetime.now(tz=UTC)
+        evaluated_at = datetime.fromisoformat(
+            resp.json()["summary"]["evaluated_at"].replace("Z", "+00:00"),
+        )
+        assert before <= evaluated_at <= after
+
+
+class TestEvaluateSingleEndpointShape:
+    """Single-rule endpoint stays bare — not wrapped in the run envelope."""
+
+    def test_single_rule_response_is_bare_result_not_envelope(self, client, db):
+        _make_habit_orm(db, current_streak=0, best_streak=10)
+        rule = _make_rule(
+            db,
+            metric=RuleMetric.streak_length,
+            threshold=7,
+            notification_type="pattern_observation",
+        )
+
+        resp = client.post(f"{RULES_URL}/{rule.id}/evaluate")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Bare RuleEvaluationResult shape — no summary/results wrapper
+        assert "summary" not in data
+        assert "results" not in data
+        assert set(data.keys()) >= {
+            "rule_id", "rule_name", "fired", "reason",
+            "notifications_created", "entities_evaluated",
+        }
 
 
 class TestEvaluateSingleEndpoint:

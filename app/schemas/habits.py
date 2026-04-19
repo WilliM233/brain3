@@ -22,7 +22,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 HabitStatus = Literal["active", "paused", "graduated", "abandoned"]
 HabitFrequency = Literal["daily", "weekdays", "weekends", "weekly", "custom"]
@@ -107,6 +107,19 @@ class HabitUpdate(BaseModel):
         return v
 
 
+class EffectiveGraduationParams(BaseModel):
+    """Resolved graduation parameters surfaced on habit responses (Amendment 05).
+
+    Composite of `resolve_graduation_params` + `apply_re_scaffold_tightening`.
+    Read-only: computed at serialization time, not stored and not settable.
+    """
+
+    window_days: int
+    target_rate: float
+    threshold_days: int
+    source: Literal["override", "friction_default"]
+
+
 class HabitResponse(BaseModel):
     """Habit returned from API — includes id and timestamps."""
 
@@ -134,6 +147,34 @@ class HabitResponse(BaseModel):
     last_completed: date | None = None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def effective_graduation_params(self) -> EffectiveGraduationParams:
+        """Resolved graduation params — overrides or friction defaults, plus tightening."""
+        # Local imports keep schemas → services dependency one-way at module
+        # load time; resolve_graduation_params uses TYPE_CHECKING for Habit so
+        # duck-typing this Pydantic model is safe — it reads the same four
+        # attrs (friction_score + three override columns).
+        from app.services.graduation import apply_re_scaffold_tightening
+        from app.services.graduation_defaults import resolve_graduation_params
+
+        window, target, threshold = resolve_graduation_params(self)
+        if self.re_scaffold_count > 0:
+            window, target, threshold = apply_re_scaffold_tightening(
+                window, target, threshold, self.re_scaffold_count,
+            )
+        has_override = (
+            self.graduation_window is not None
+            or self.graduation_target is not None
+            or self.graduation_threshold is not None
+        )
+        return EffectiveGraduationParams(
+            window_days=window,
+            target_rate=target,
+            threshold_days=threshold,
+            source="override" if has_override else "friction_default",
+        )
 
 
 class HabitDetailResponse(HabitResponse):

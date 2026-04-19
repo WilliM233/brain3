@@ -117,22 +117,7 @@ def evaluate_graduation_endpoint(
     habit_id: UUID, db: Session = Depends(get_db),
 ) -> GraduationResult:
     """Dry-run graduation evaluation. Returns eligibility metrics without changing state."""
-    habit = _get_habit_or_404(db, habit_id)
-
-    if habit.status != "active":
-        raise HTTPException(
-            status_code=422,
-            detail=f"Habit status is '{habit.status}', must be 'active'",
-        )
-    if habit.scaffolding_status != "accountable":
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Habit scaffolding_status is '{habit.scaffolding_status}', "
-                "must be 'accountable'"
-            ),
-        )
-
+    _get_habit_or_404(db, habit_id)
     return evaluate_graduation(db, habit_id)
 
 
@@ -250,14 +235,7 @@ def evaluate_slip_endpoint(
     habit_id: UUID, db: Session = Depends(get_db),
 ) -> SlipDetectionResult:
     """Check if a graduated habit shows signs of regression. Read-only."""
-    habit = _get_habit_or_404(db, habit_id)
-
-    if habit.scaffolding_status != "graduated":
-        raise HTTPException(
-            status_code=422,
-            detail=f"Habit scaffolding_status is '{habit.scaffolding_status}', must be 'graduated'",
-        )
-
+    _get_habit_or_404(db, habit_id)
     return evaluate_graduated_habit_slip(db, habit_id)
 
 

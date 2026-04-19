@@ -86,6 +86,25 @@ def evaluate_graduation(
     if habit is None:
         raise ValueError(f"Habit {habit_id} not found")
 
+    # Gate: habit must be active
+    if habit.status != "active":
+        return GraduationResult(
+            eligible=False,
+            habit_id=habit_id,
+            current_rate=0.0,
+            total_notifications=0,
+            already_done_count=0,
+            window_days=0,
+            target_rate=0.0,
+            days_accountable=0,
+            threshold_days=0,
+            meets_rate=False,
+            meets_threshold=False,
+            blocking_reasons=[
+                f"Habit status must be 'active' to evaluate graduation (current: {habit.status})"
+            ],
+        )
+
     # Gate: only accountable habits can be evaluated
     if habit.scaffolding_status != "accountable":
         return GraduationResult(
@@ -101,7 +120,8 @@ def evaluate_graduation(
             meets_rate=False,
             meets_threshold=False,
             blocking_reasons=[
-                "Habit scaffolding_status must be 'accountable' to evaluate graduation"
+                "Habit scaffolding_status must be 'accountable' to evaluate "
+                f"graduation (current: {habit.scaffolding_status})"
             ],
         )
 

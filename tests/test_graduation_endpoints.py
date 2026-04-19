@@ -143,25 +143,35 @@ class TestEvaluateGraduationEndpoint:
         assert resp.status_code == 404
 
     def test_wrong_scaffolding_status(self, client, db):
-        """Habit with scaffolding_status != accountable returns 422."""
+        """Habit with scaffolding_status != accountable returns 200 with blocking_reasons."""
         habit = _create_habit(db, scaffolding_status="tracking")
         resp = client.post(f"/api/habits/{habit.id}/evaluate-graduation")
-        assert resp.status_code == 422
-        assert "accountable" in resp.json()["detail"]
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["eligible"] is False
+        assert data["habit_id"] == str(habit.id)
+        assert any("accountable" in reason for reason in data["blocking_reasons"])
 
     def test_graduated_habit_rejected(self, client, db):
-        """Already graduated habit returns 422."""
+        """Already graduated habit returns 200 with blocking_reasons."""
         habit = _create_habit(db, scaffolding_status="graduated",
                               notification_frequency="graduated")
         resp = client.post(f"/api/habits/{habit.id}/evaluate-graduation")
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["eligible"] is False
+        assert any("accountable" in reason for reason in data["blocking_reasons"])
 
     def test_paused_habit_rejected(self, client, db):
-        """Paused habit returns 422 (wrong status)."""
+        """Paused habit returns 200 with status blocking_reason."""
         habit = _create_habit(db, status="paused", scaffolding_status="accountable")
         resp = client.post(f"/api/habits/{habit.id}/evaluate-graduation")
-        assert resp.status_code == 422
-        assert "active" in resp.json()["detail"]
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["eligible"] is False
+        assert any(
+            "status must be 'active'" in reason for reason in data["blocking_reasons"]
+        )
 
 
 # ===========================================================================
@@ -334,12 +344,15 @@ class TestEvaluateSlipEndpoint:
         assert data["slip_detected"] is True
         assert data["recommendation"] == "re_scaffold"
 
-    def test_not_graduated_422(self, client, db):
-        """Non-graduated habit returns 422."""
+    def test_not_graduated(self, client, db):
+        """Non-graduated habit returns 200 with slip_detected=False and message."""
         habit = _create_habit(db, scaffolding_status="accountable")
         resp = client.post(f"/api/habits/{habit.id}/evaluate-slip")
-        assert resp.status_code == 422
-        assert "graduated" in resp.json()["detail"]
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["slip_detected"] is False
+        assert "not graduated" in data["message"]
+        assert data["recommendation"] == "no_action"
 
     def test_not_found(self, client):
         """Nonexistent habit returns 404."""

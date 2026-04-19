@@ -344,6 +344,19 @@ class TestEvaluateGraduation:
         assert result.eligible is False
         assert any("accountable" in r for r in result.blocking_reasons)
 
+    def test_paused_habit_returns_blocking_reason(self, db):
+        """Habit with status != 'active' returns eligible=False with status blocking_reason."""
+        habit = _create_habit(
+            db, status="paused", scaffolding_status="accountable",
+        )
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.eligible is False
+        assert any(
+            "status must be 'active'" in r for r in result.blocking_reasons
+        )
+
     def test_wrong_scaffolding_status_graduated(self, db):
         """Already graduated habits cannot be re-evaluated."""
         habit = _create_habit(db, scaffolding_status="graduated")

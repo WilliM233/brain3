@@ -30,6 +30,7 @@ from app.models import (
     Routine,
 )
 from app.services.graduation import (
+    CompletionWindow,
     FrequencyChangeResult,
     FrequencyStepResult,
     GraduationExecutionResult,
@@ -46,6 +47,7 @@ from app.services.graduation import (
     graduate_habit,
     next_step_down,
     re_scaffold_habit,
+    read_completion_history,
 )
 from app.services.graduation_defaults import resolve_graduation_params
 from tests.conftest import make_habit
@@ -1436,6 +1438,119 @@ class TestEvaluateFrequencyStepDownHybridCredit:
         ]
         assert len(stability_entries) == 1
         assert stability_entries[0].is_stable is True
+
+
+# ===========================================================================
+# [2G-Enh-01] read_completion_history helper — brain3#186
+# ===========================================================================
+
+
+class TestReadCompletionHistory:
+    """Direct unit tests for the shared hybrid-credit helper.
+
+    The helper is the single source of truth for computing completion rate
+    across evaluate_graduation (window_start mode) and
+    evaluate_frequency_step_down (window_limit mode). These tests guard the
+    helper contract directly; evaluator-level tests remain as regression
+    guards against accidental drift through the helper.
+    """
+
+    def test_window_start_mode_counts_notifications_in_window(self, db):
+        """window_start mode filters by scheduled_at >= window_start."""
+        habit = _create_habit(db)
+        # 10 explicit 'Already done' responses within the last 30 days.
+        for i in range(10):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        # 5 older notifications outside the 30-day window — must be excluded.
+        for i in range(5):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=40 + i)
+
+        window_start = datetime.now(tz=UTC) - timedelta(days=30)
+        window = read_completion_history(db, habit.id, window_start=window_start)
+
+        assert isinstance(window, CompletionWindow)
+        assert window.total_notifications == 10
+        assert window.already_done_count == 10
+        assert window.rate == 1.0
+
+    def test_window_limit_mode_takes_most_recent_n(self, db):
+        """window_limit mode orders by scheduled_at DESC and keeps N most recent."""
+        habit = _create_habit(db)
+        # 20 notifications across 20 days — all explicit 'Already done'.
+        for i in range(20):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+
+        window = read_completion_history(db, habit.id, window_limit=14)
+
+        # Only the 14 most recent are considered.
+        assert window.total_notifications == 14
+        assert window.already_done_count == 14
+        assert window.rate == 1.0
+
+    def test_empty_window_returns_zero_rate(self, db):
+        """No matching notifications → total=0, rate=0.0."""
+        habit = _create_habit(db)
+
+        win_start = read_completion_history(
+            db, habit.id, window_start=datetime.now(tz=UTC) - timedelta(days=30),
+        )
+        assert win_start.total_notifications == 0
+        assert win_start.already_done_count == 0
+        assert win_start.rate == 0.0
+
+        win_limit = read_completion_history(db, habit.id, window_limit=14)
+        assert win_limit.total_notifications == 0
+        assert win_limit.already_done_count == 0
+        assert win_limit.rate == 0.0
+
+    def test_hybrid_credit_from_completion_row(self, db):
+        """Expired null-response nudges credited when a same-date HabitCompletion exists."""
+        habit = _create_habit(db)
+        # 10 expired nudges with same-date completions.
+        for i in range(10):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            _create_completion(db, habit.id, days_ago=days_ago)
+
+        window = read_completion_history(
+            db, habit.id, window_start=datetime.now(tz=UTC) - timedelta(days=30),
+        )
+
+        assert window.total_notifications == 10
+        assert window.already_done_count == 10
+        assert window.rate == 1.0
+
+    def test_explicit_negative_response_not_overridden_by_completion(self, db):
+        """Explicit non-'Already done' responses win over completion rows."""
+        habit = _create_habit(db)
+        # 10 'Skip today' responses with same-date completions — must NOT credit.
+        for i in range(10):
+            days_ago = i + 1
+            _create_notification(db, habit.id, "Skip today", "responded", days_ago=days_ago)
+            _create_completion(db, habit.id, days_ago=days_ago)
+
+        window = read_completion_history(db, habit.id, window_limit=14)
+
+        assert window.total_notifications == 10
+        assert window.already_done_count == 0
+        assert window.rate == 0.0
+
+    def test_raises_when_both_modes_provided(self, db):
+        """Both window_start and window_limit → ValueError."""
+        habit = _create_habit(db)
+        with pytest.raises(ValueError, match="Exactly one"):
+            read_completion_history(
+                db,
+                habit.id,
+                window_start=datetime.now(tz=UTC) - timedelta(days=30),
+                window_limit=14,
+            )
+
+    def test_raises_when_neither_mode_provided(self, db):
+        """Neither window_start nor window_limit → ValueError."""
+        habit = _create_habit(db)
+        with pytest.raises(ValueError, match="Exactly one"):
+            read_completion_history(db, habit.id)
 
 
 # ===========================================================================

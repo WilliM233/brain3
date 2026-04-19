@@ -59,6 +59,109 @@ class GraduationExecutionResult(BaseModel):
     message: str
 
 
+class CompletionWindow(BaseModel):
+    """Hybrid completion signal for a habit over a notification window.
+
+    Returned by `read_completion_history`. Combines explicit nudge responses
+    with same-date HabitCompletion rows under the D5/D6 hybrid credit rule.
+    """
+
+    total_notifications: int
+    already_done_count: int
+    rate: float
+
+
+def read_completion_history(
+    db: Session,
+    habit_id: UUID,
+    *,
+    window_start: datetime | None = None,
+    window_limit: int | None = None,
+) -> CompletionWindow:
+    """Return the hybrid completion signal for a habit over the specified window.
+
+    Combines two sources per D5/D6 hybrid credit:
+    - notification_queue rows where response='Already done'
+    - notification_queue rows where response IS NULL AND status='expired' AND a
+      habit_completions row exists with completed_at = scheduled_at::date and
+      matching habit_id
+
+    Exactly one of window_start or window_limit must be provided:
+    - window_start: filter notifications with scheduled_at >= window_start
+      (evaluate_graduation pattern, rolling date window)
+    - window_limit: take the N most-recent notifications, ORDER BY scheduled_at
+      DESC (evaluate_frequency_step_down pattern)
+
+    Explicit responses always win over completion rows: 'Already done' counts
+    on its own, and explicit non-'Already done' responses (e.g., 'Skip today')
+    are never overridden by a same-date completion.
+
+    Raises ValueError if both or neither mode argument is provided.
+    """
+    if (window_start is None) == (window_limit is None):
+        raise ValueError(
+            "Exactly one of window_start or window_limit must be provided",
+        )
+
+    query = db.query(NotificationQueue).filter(
+        NotificationQueue.target_entity_type == "habit",
+        NotificationQueue.target_entity_id == habit_id,
+        NotificationQueue.notification_type == "habit_nudge",
+        NotificationQueue.status.in_(["responded", "expired"]),
+    )
+
+    if window_start is not None:
+        notifications = query.filter(
+            NotificationQueue.scheduled_at >= window_start,
+        ).all()
+    else:
+        notifications = (
+            query.order_by(NotificationQueue.scheduled_at.desc())
+            .limit(window_limit)
+            .all()
+        )
+
+    total = len(notifications)
+    if total == 0:
+        return CompletionWindow(
+            total_notifications=0,
+            already_done_count=0,
+            rate=0.0,
+        )
+
+    # Completion date range is bounded by the actual notification span — any
+    # completion outside this range cannot match a nudge's scheduled_at.date()
+    # and is therefore irrelevant to the hybrid-credit lookup.
+    notification_dates = [n.scheduled_at.date() for n in notifications]
+    earliest_date = min(notification_dates)
+    latest_date = max(notification_dates)
+
+    completion_dates = {
+        c.completed_at
+        for c in db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.completed_at >= earliest_date,
+            HabitCompletion.completed_at <= latest_date,
+        )
+        .all()
+    }
+
+    already_done_count = 0
+    for n in notifications:
+        if n.response == "Already done":
+            already_done_count += 1
+        elif n.status == "expired" and n.response is None:
+            if n.scheduled_at.date() in completion_dates:
+                already_done_count += 1
+
+    return CompletionWindow(
+        total_notifications=total,
+        already_done_count=already_done_count,
+        rate=already_done_count / total,
+    )
+
+
 def apply_re_scaffold_tightening(
     window: int,
     target: float,
@@ -147,24 +250,15 @@ def evaluate_graduation(
 
     meets_threshold = days_accountable >= threshold
 
-    # Query notification responses in the rolling window
+    # Query notification responses + hybrid completion credit (D5, Amendment 12)
+    # via shared helper — same semantic is used by evaluate_frequency_step_down.
     window_start = now - timedelta(days=window)
-    notifications = (
-        db.query(NotificationQueue)
-        .filter(
-            NotificationQueue.target_entity_type == "habit",
-            NotificationQueue.target_entity_id == habit_id,
-            NotificationQueue.notification_type == "habit_nudge",
-            NotificationQueue.scheduled_at >= window_start,
-            NotificationQueue.status.in_(["responded", "expired"]),
-        )
-        .all()
+    completion_window = read_completion_history(
+        db, habit_id, window_start=window_start,
     )
 
-    total_notifications = len(notifications)
-
     # Handle zero-notification edge case
-    if total_notifications == 0:
+    if completion_window.total_notifications == 0:
         return GraduationResult(
             eligible=False,
             habit_id=habit_id,
@@ -180,33 +274,9 @@ def evaluate_graduation(
             blocking_reasons=["No notification data in evaluation window"],
         )
 
-    # D5 hybrid credit (Amendment 12): an expired nudge with no response can be
-    # credited by a same-date HabitCompletion row. Reflects that multiple
-    # low-friction completion paths (direct complete, routine cascade,
-    # reconciliation) all represent "I did it" from the user's perspective.
-    # Explicit responses — positive or negative — always win over completion
-    # rows: "Already done" still counts on its own, and an explicit non-"Already
-    # done" response (e.g., "Skip today") is never overridden.
-    completion_dates = {
-        c.completed_at
-        for c in db.query(HabitCompletion)
-        .filter(
-            HabitCompletion.habit_id == habit_id,
-            HabitCompletion.completed_at >= window_start.date(),
-            HabitCompletion.completed_at <= now.date(),
-        )
-        .all()
-    }
-
-    already_done_count = 0
-    for n in notifications:
-        if n.response == "Already done":
-            already_done_count += 1
-        elif n.status == "expired" and n.response is None:
-            if n.scheduled_at.date() in completion_dates:
-                already_done_count += 1
-
-    current_rate = already_done_count / total_notifications
+    total_notifications = completion_window.total_notifications
+    already_done_count = completion_window.already_done_count
+    current_rate = completion_window.rate
 
     meets_rate = current_rate >= target
 
@@ -455,21 +525,14 @@ def evaluate_frequency_step_down(
                 ],
             )
 
-    # Query most recent N notifications
-    notifications = (
-        db.query(NotificationQueue)
-        .filter(
-            NotificationQueue.target_entity_type == "habit",
-            NotificationQueue.target_entity_id == habit_id,
-            NotificationQueue.notification_type == "habit_nudge",
-            NotificationQueue.status.in_(["responded", "expired"]),
-        )
-        .order_by(NotificationQueue.scheduled_at.desc())
-        .limit(STEP_DOWN_NOTIFICATION_LIMIT)
-        .all()
+    # Query most recent N notifications + hybrid completion credit (D6,
+    # Amendment 15) via shared helper — same semantic is used by
+    # evaluate_graduation.
+    completion_window = read_completion_history(
+        db, habit_id, window_limit=STEP_DOWN_NOTIFICATION_LIMIT,
     )
 
-    total = len(notifications)
+    total = completion_window.total_notifications
 
     # Minimum data check
     if total < STEP_DOWN_MIN_NOTIFICATIONS:
@@ -481,35 +544,7 @@ def evaluate_frequency_step_down(
             ],
         )
 
-    # D6 hybrid credit (Amendment 15): mirrors [2G-01] D5 — an expired nudge
-    # with no response can be credited by a same-date HabitCompletion row.
-    # Scoped to the LIMIT-14 scheduled_at span so the completion range adapts
-    # naturally to the habit's current frequency. Explicit responses win:
-    # "Already done" still counts on its own, and explicit non-"Already done"
-    # responses (e.g., "Skip today") are never overridden.
-    # Duplicates [2G-01]'s inline implementation; extraction is Wave 3 #186.
-    earliest_date = notifications[-1].scheduled_at.date()
-    latest_date = notifications[0].scheduled_at.date()
-    completion_dates = {
-        c.completed_at
-        for c in db.query(HabitCompletion)
-        .filter(
-            HabitCompletion.habit_id == habit_id,
-            HabitCompletion.completed_at >= earliest_date,
-            HabitCompletion.completed_at <= latest_date,
-        )
-        .all()
-    }
-
-    already_done_count = 0
-    for n in notifications:
-        if n.response == "Already done":
-            already_done_count += 1
-        elif n.status == "expired" and n.response is None:
-            if n.scheduled_at.date() in completion_dates:
-                already_done_count += 1
-
-    rate = already_done_count / total
+    rate = completion_window.rate
 
     # Check if already at minimum stepped frequency
     recommended = next_step_down(habit.notification_frequency)

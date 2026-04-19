@@ -560,7 +560,17 @@ class TestListRulesEndpoint:
     def test_list_empty(self, client):
         resp = client.get(RULES_URL)
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
+
+    def test_list_single(self, client):
+        """Single-element list returns envelope with count=1."""
+        client.post(RULES_URL, json=_rule_payload(name="Only"))
+        resp = client.get(RULES_URL)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == "Only"
 
     def test_list_returns_created_rules(self, client):
         client.post(RULES_URL, json=_rule_payload(name="Rule A"))
@@ -568,7 +578,8 @@ class TestListRulesEndpoint:
         resp = client.get(RULES_URL)
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 2
+        assert data["count"] == 2
+        assert len(data["items"]) == 2
 
     def test_list_ordered_by_created_at_desc(self, client, db):
         """Newest rule appears first in the list."""
@@ -607,7 +618,9 @@ class TestListRulesEndpoint:
         db.commit()
 
         resp = client.get(RULES_URL)
-        names = [r["name"] for r in resp.json()]
+        data = resp.json()
+        assert data["count"] == 2
+        names = [r["name"] for r in data["items"]]
         assert names == ["Second", "First"]
 
     def test_filter_by_entity_type(self, client):
@@ -621,16 +634,16 @@ class TestListRulesEndpoint:
         ))
         resp = client.get(RULES_URL, params={"entity_type": "task"})
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Task rule"
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "Task rule"
 
     def test_filter_by_enabled(self, client):
         client.post(RULES_URL, json=_rule_payload(name="Active", enabled=True))
         client.post(RULES_URL, json=_rule_payload(name="Disabled", enabled=False))
         resp = client.get(RULES_URL, params={"enabled": "false"})
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Disabled"
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "Disabled"
 
     def test_filter_by_notification_type(self, client):
         client.post(RULES_URL, json=_rule_payload(
@@ -644,8 +657,8 @@ class TestListRulesEndpoint:
             "notification_type": "stale_work_nudge",
         })
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Stale"
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "Stale"
 
     def test_filter_by_entity_id(self, client):
         eid = str(uuid.uuid4())
@@ -653,8 +666,8 @@ class TestListRulesEndpoint:
         client.post(RULES_URL, json=_rule_payload(name="Global"))
         resp = client.get(RULES_URL, params={"entity_id": eid})
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Scoped"
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "Scoped"
 
     def test_filter_combined(self, client):
         """Multiple filters compose with AND logic."""
@@ -672,8 +685,8 @@ class TestListRulesEndpoint:
             "entity_type": "habit", "enabled": "true",
         })
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Match"
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "Match"
 
 
 # ---------------------------------------------------------------------------
@@ -830,7 +843,9 @@ class TestRuleLifecycle:
         # List
         resp = client.get(RULES_URL)
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
 
         # Update
         resp = client.patch(
@@ -847,4 +862,4 @@ class TestRuleLifecycle:
 
         # Confirm gone
         resp = client.get(RULES_URL)
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}

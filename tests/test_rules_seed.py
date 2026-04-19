@@ -339,8 +339,8 @@ class TestIsDefaultFilter:
         resp = client.get(RULES_URL, params={"is_default": "true"})
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 4
-        assert all(r["is_default"] is True for r in data)
+        assert data["count"] == 4
+        assert all(r["is_default"] is True for r in data["items"])
 
     def test_filter_is_default_false(self, client, seeded_rules):
         """Filtering by is_default=false returns only user-created rules."""
@@ -357,9 +357,9 @@ class TestIsDefaultFilter:
         resp = client.get(RULES_URL, params={"is_default": "false"})
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "User custom"
-        assert data[0]["is_default"] is False
+        assert data["count"] == 1
+        assert data["items"][0]["name"] == "User custom"
+        assert data["items"][0]["is_default"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +391,7 @@ class TestSeedCreationViaAPI:
         """GET /api/rules?enabled=true returns all 4 default rules."""
         resp = client.get(RULES_URL, params={"enabled": "true"})
         assert resp.status_code == 200
-        assert len(resp.json()) == 4
+        assert resp.json()["count"] == 4
 
 
 # ---------------------------------------------------------------------------
@@ -433,10 +433,10 @@ class TestSeedIdempotency:
 
         # Verify 4 rules
         resp = client.get(RULES_URL)
-        assert len(resp.json()) == 4
+        assert resp.json()["count"] == 4
 
         # Second pass — skip existing (simulates seed script behavior)
-        existing = {r["name"] for r in client.get(RULES_URL).json()}
+        existing = {r["name"] for r in client.get(RULES_URL).json()["items"]}
         created_count = 0
         for rule_data in seed_rules:
             if rule_data["name"] not in existing:
@@ -448,7 +448,7 @@ class TestSeedIdempotency:
 
         # Still exactly 4 rules
         resp = client.get(RULES_URL)
-        assert len(resp.json()) == 4
+        assert resp.json()["count"] == 4
 
 
 # ---------------------------------------------------------------------------

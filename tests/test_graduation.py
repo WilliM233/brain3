@@ -1260,6 +1260,185 @@ class TestEvaluateFrequencyStepDown:
 
 
 # ===========================================================================
+# D6 hybrid credit — [2G-Bug-03]
+# ===========================================================================
+
+
+class TestEvaluateFrequencyStepDownHybridCredit:
+    """Expired nudges credited by same-date HabitCompletion rows.
+
+    See `[2G-03]` Amendment 15 / brain3#185. Mirrors D5 in `[2G-01]` / #184 —
+    same ADHD quality lens: multiple low-friction completion paths feel like
+    "I did it" and should all count toward step-down rate, regardless of
+    which channel recorded the completion.
+    """
+
+    def test_routine_cascade_completion_credited_toward_step_down(self, db):
+        """14 expired nudges with matching routine_cascade completions → 100% rate, step down."""
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(14):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            db.add(
+                HabitCompletion(
+                    id=uuid.uuid4(),
+                    habit_id=habit.id,
+                    completed_at=date.today() - timedelta(days=days_ago),
+                    source="routine_cascade",
+                ),
+            )
+        db.commit()
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 1.0
+        assert result.recommend_step_down is True
+        assert result.recommended_frequency == "every_other_day"
+        assert result.blocking_reasons == []
+
+    def test_no_credit_when_no_completion_row_step_down(self, db):
+        """Regression guard: expired nudges with no completions don't get hybrid credit."""
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(14):
+            _create_notification(db, habit.id, None, "expired", days_ago=i + 1)
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 0.0
+        assert result.recommend_step_down is False
+        assert any("below step-down threshold" in r for r in result.blocking_reasons)
+
+    def test_mixed_response_and_completion_step_down(self, db):
+        """7 'Already done' + 7 expired-with-matching-completion → 100% rate."""
+        habit = _create_habit(db, notification_frequency="daily")
+        # First 7 days: explicit "Already done" responses, no completion rows needed
+        for i in range(7):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+        # Next 7 days: expired nudges with matching routine_cascade completions
+        for i in range(7):
+            days_ago = 8 + i
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            db.add(
+                HabitCompletion(
+                    id=uuid.uuid4(),
+                    habit_id=habit.id,
+                    completed_at=date.today() - timedelta(days=days_ago),
+                    source="routine_cascade",
+                ),
+            )
+        db.commit()
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 1.0
+        assert result.recommend_step_down is True
+        assert result.recommended_frequency == "every_other_day"
+
+    def test_same_day_nudge_and_completion_not_double_counted(self, db):
+        """De-dup rule: explicit 'Already done' + same-date completion counts once, not twice.
+
+        Denominator stays at nudge count; credit caps at total_evaluated.
+        """
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(14):
+            days_ago = i + 1
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=days_ago)
+            db.add(
+                HabitCompletion(
+                    id=uuid.uuid4(),
+                    habit_id=habit.id,
+                    completed_at=date.today() - timedelta(days=days_ago),
+                    source="individual",
+                ),
+            )
+        db.commit()
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 1.0
+
+    def test_explicit_negative_response_not_overridden_by_completion_step_down(self, db):
+        """Explicit non-'Already done' responses win — completion row does NOT override."""
+        habit = _create_habit(db, notification_frequency="daily")
+        for i in range(14):
+            days_ago = i + 1
+            _create_notification(db, habit.id, "Skip today", "responded", days_ago=days_ago)
+            _create_completion(db, habit.id, days_ago=days_ago)
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 0.0
+        assert result.recommend_step_down is False
+
+    def test_extra_completions_outside_nudge_range_do_not_inflate_denominator(self, db):
+        """Completion rows do NOT inflate total_evaluated — denominator stays nudge count."""
+        habit = _create_habit(db, notification_frequency="daily")
+        # 14 expired nudges on days 1-14 + 14 matching completions
+        for i in range(14):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            _create_completion(db, habit.id, days_ago=days_ago)
+        # Extra completions on days 20-25 with no matching nudges — should be ignored
+        for i in range(6):
+            _create_completion(db, habit.id, days_ago=20 + i)
+
+        result = evaluate_frequency_step_down(db, habit.id)
+
+        assert result.notifications_evaluated == 14
+        assert result.current_rate == 1.0
+
+    def test_stacking_stability_inherits_step_down_rate_change(self, db):
+        """Transitive: _assess_habit_stability via step-down rate now reflects completion credit.
+
+        A routine-cascade-completed habit with no explicit nudge responses used to be
+        'not stable' (rate 0%); after D6 it's stable (rate 100%) via the first OR'd
+        criterion in _assess_habit_stability. Verified through the public
+        get_stacking_recommendation path — the habit is not in blocking_habits.
+
+        The habit is intentionally set up to fail criterion 2 (14+ days accountable,
+        7-day completion streak) so criterion 1 is the only path to stability:
+        accountable_since=10 days ago means criterion 2 cannot save it.
+        """
+        routine = _create_routine(db)
+        # accountable_since=10 days: fails stacking criterion 2 (needs 14+).
+        habit = _create_habit(
+            db,
+            routine_id=routine.id,
+            notification_frequency="daily",
+            scaffolding_status="accountable",
+            accountable_since=date.today() - timedelta(days=10),
+        )
+        for i in range(14):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            db.add(
+                HabitCompletion(
+                    id=uuid.uuid4(),
+                    habit_id=habit.id,
+                    completed_at=date.today() - timedelta(days=days_ago),
+                    source="routine_cascade",
+                ),
+            )
+        db.commit()
+
+        recommendation = get_stacking_recommendation(db, routine.id)
+
+        # Habit is stable → not in blocking_habits → routine ready for next stack.
+        assert recommendation.blocking_habits == []
+        assert recommendation.ready is True
+        stability_entries = [
+            s for s in recommendation.active_accountable_habits if s.habit_id == habit.id
+        ]
+        assert len(stability_entries) == 1
+        assert stability_entries[0].is_stable is True
+
+
+# ===========================================================================
 # [2G-03] apply_frequency_step_down
 # ===========================================================================
 

@@ -42,7 +42,7 @@ class HabitCreate(BaseModel):
     frequency: HabitFrequency | None = None
     notification_frequency: NotificationFrequency = "none"
     scaffolding_status: ScaffoldingStatus = "tracking"
-    introduced_at: date | None = None
+    accountable_since: date | None = None
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None
@@ -83,7 +83,7 @@ class HabitUpdate(BaseModel):
     frequency: HabitFrequency | None = None
     notification_frequency: NotificationFrequency | None = None
     scaffolding_status: ScaffoldingStatus | None = None
-    introduced_at: date | None = None
+    accountable_since: date | None = None
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None
@@ -120,7 +120,7 @@ class HabitResponse(BaseModel):
     frequency: HabitFrequency | None = None
     notification_frequency: NotificationFrequency
     scaffolding_status: ScaffoldingStatus
-    introduced_at: date | None = None
+    accountable_since: date | None = None
     graduation_window: int | None = None
     graduation_target: float | None = None
     graduation_threshold: int | None = None

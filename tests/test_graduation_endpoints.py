@@ -39,7 +39,7 @@ def _create_habit(db, **overrides) -> Habit:
         "frequency": "daily",
         "notification_frequency": "daily",
         "scaffolding_status": "accountable",
-        "introduced_at": date.today() - timedelta(days=60),
+        "accountable_since": date.today() - timedelta(days=60),
     }
     defaults.update(constructor_overrides)
     habit = Habit(**defaults)
@@ -106,7 +106,7 @@ def _create_completion(db, habit_id, days_ago=0):
 def _eligible_habit(db, **overrides) -> Habit:
     """Create a habit that meets graduation criteria."""
     defaults = {
-        "introduced_at": date.today() - timedelta(days=60),
+        "accountable_since": date.today() - timedelta(days=60),
         "scaffolding_status": "accountable",
         "notification_frequency": "daily",
         "status": "active",

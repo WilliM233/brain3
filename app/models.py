@@ -580,7 +580,11 @@ class Habit(Base):
         nullable=False,
         server_default="tracking",
     )
-    introduced_at: Mapped[date | None] = mapped_column(Date)
+    accountable_since: Mapped[date | None] = mapped_column(Date)
+    """Date the habit entered the accountable phase of the graduated
+    scaffolding loop. Auto-populated on tracking→accountable transition
+    (see ``app/routers/habits.py``) and never thereafter. Used as the
+    graduation threshold anchor and the stacking stability anchor."""
     graduation_window: Mapped[int | None] = mapped_column(Integer)
     graduation_target: Mapped[float | None] = mapped_column(
         Numeric(precision=3, scale=2),

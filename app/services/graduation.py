@@ -41,7 +41,7 @@ class GraduationResult(BaseModel):
     already_done_count: int
     window_days: int
     target_rate: float
-    days_since_introduction: int
+    days_accountable: int
     threshold_days: int
     meets_rate: bool
     meets_threshold: bool
@@ -96,7 +96,7 @@ def evaluate_graduation(
             already_done_count=0,
             window_days=0,
             target_rate=0.0,
-            days_since_introduction=0,
+            days_accountable=0,
             threshold_days=0,
             meets_rate=False,
             meets_threshold=False,
@@ -119,13 +119,13 @@ def evaluate_graduation(
 
     now = datetime.now(tz=UTC)
 
-    # Compute days since introduction
-    if habit.introduced_at is not None:
-        days_since_introduction = (now.date() - habit.introduced_at).days
+    # Compute days accountable
+    if habit.accountable_since is not None:
+        days_accountable = (now.date() - habit.accountable_since).days
     else:
-        days_since_introduction = 0
+        days_accountable = 0
 
-    meets_threshold = days_since_introduction >= threshold
+    meets_threshold = days_accountable >= threshold
 
     # Query notification responses in the rolling window
     window_start = now - timedelta(days=window)
@@ -153,7 +153,7 @@ def evaluate_graduation(
             already_done_count=0,
             window_days=window,
             target_rate=target,
-            days_since_introduction=days_since_introduction,
+            days_accountable=days_accountable,
             threshold_days=threshold,
             meets_rate=False,
             meets_threshold=meets_threshold,
@@ -171,7 +171,7 @@ def evaluate_graduation(
         blocking_reasons.append(f"Rate {current_rate:.0%} below target {target:.0%}")
     if not meets_threshold:
         blocking_reasons.append(
-            f"{days_since_introduction} days since introduction, need {threshold}"
+            f"{days_accountable} days accountable, need {threshold}"
         )
 
     eligible = meets_rate and meets_threshold
@@ -184,7 +184,7 @@ def evaluate_graduation(
         already_done_count=already_done_count,
         window_days=window,
         target_rate=target,
-        days_since_introduction=days_since_introduction,
+        days_accountable=days_accountable,
         threshold_days=threshold,
         meets_rate=meets_rate,
         meets_threshold=meets_threshold,
@@ -928,8 +928,8 @@ def _assess_habit_stability(
 
     # Stable if accountable for 14+ days with no missed completions in last 7
     now = datetime.now(tz=UTC)
-    if habit.introduced_at is not None:
-        days_accountable = (now.date() - habit.introduced_at).days
+    if habit.accountable_since is not None:
+        days_accountable = (now.date() - habit.accountable_since).days
         if days_accountable >= STABILITY_MIN_ACCOUNTABLE_DAYS:
             window_start = now.date() - timedelta(
                 days=STABILITY_NO_MISS_WINDOW_DAYS,
@@ -960,8 +960,8 @@ def _assess_habit_stability(
 
     # Not stable — blocking
     detail_parts = [f"{rate:.0%} already-done rate"]
-    if habit.introduced_at is not None:
-        days = (now.date() - habit.introduced_at).days
+    if habit.accountable_since is not None:
+        days = (now.date() - habit.accountable_since).days
         detail_parts.append(f"{days} days accountable")
     return HabitStabilityInfo(
         habit_id=habit.id,
@@ -1030,12 +1030,12 @@ def get_stacking_recommendation(
 
     if ready:
         # Priority 1: Paused habits with scaffolding_status='tracking',
-        # ordered by introduced_at (oldest first)
+        # ordered by accountable_since (oldest first)
         paused_tracking = [h for h in paused_habits if h.scaffolding_status == "tracking"]
         paused_tracking.sort(
             key=lambda h: (
                 h.position if h.position is not None else float("inf"),
-                h.introduced_at or datetime.min.date(),
+                h.accountable_since or datetime.min.date(),
             ),
         )
 

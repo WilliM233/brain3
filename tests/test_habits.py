@@ -175,13 +175,24 @@ class TestListHabits:
     def test_list_habits_empty(self, client):
         resp = client.get("/api/habits")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
+
+    def test_list_habits_single(self, client):
+        make_habit(client, title="Only")
+        resp = client.get("/api/habits")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["title"] == "Only"
 
     def test_list_habits(self, client):
         make_habit(client, title="A")
         make_habit(client, title="B")
         resp = client.get("/api/habits")
-        assert len(resp.json()) == 2
+        data = resp.json()
+        assert data["count"] == 2
+        assert len(data["items"]) == 2
 
     def test_filter_by_routine_id(self, client):
         domain = make_domain(client)
@@ -189,25 +200,26 @@ class TestListHabits:
         make_habit(client, title="Linked", routine_id=routine["id"])
         make_habit(client, title="Standalone")
         resp = client.get(f"/api/habits?routine_id={routine['id']}")
-        habits = resp.json()
-        assert len(habits) == 1
-        assert habits[0]["title"] == "Linked"
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["title"] == "Linked"
 
     def test_filter_by_status(self, client):
         make_habit(client, title="Active", status="active")
         make_habit(client, title="Paused", status="paused")
         resp = client.get("/api/habits?status=paused")
-        habits = resp.json()
-        assert len(habits) == 1
-        assert habits[0]["title"] == "Paused"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Paused"
 
     def test_filter_by_scaffolding_status(self, client):
         make_habit(client, title="Tracking", scaffolding_status="tracking")
         make_habit(client, title="Accountable", scaffolding_status="accountable")
         resp = client.get("/api/habits?scaffolding_status=accountable")
-        habits = resp.json()
-        assert len(habits) == 1
-        assert habits[0]["title"] == "Accountable"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Accountable"
 
     def test_filter_combined(self, client):
         domain = make_domain(client)
@@ -230,15 +242,15 @@ class TestListHabits:
             f"/api/habits?routine_id={routine['id']}"
             "&status=active&scaffolding_status=accountable"
         )
-        habits = resp.json()
-        assert len(habits) == 1
-        assert habits[0]["title"] == "Match"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Match"
 
     def test_list_ordered_by_created_at(self, client):
         make_habit(client, title="First")
         make_habit(client, title="Second")
         resp = client.get("/api/habits")
-        titles = [h["title"] for h in resp.json()]
+        titles = [h["title"] for h in resp.json()["items"]]
         assert titles == ["First", "Second"]
 
 

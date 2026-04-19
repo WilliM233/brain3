@@ -29,6 +29,7 @@ from app.schemas.habits import (
     HabitCompleteResponse,
     HabitCreate,
     HabitDetailResponse,
+    HabitListResponse,
     HabitResponse,
     HabitUpdate,
 )
@@ -62,13 +63,13 @@ def create_habit(payload: HabitCreate, db: Session = Depends(get_db)) -> Habit:
     return habit
 
 
-@router.get("/", response_model=list[HabitResponse])
+@router.get("/", response_model=HabitListResponse)
 def list_habits(
     routine_id: UUID | None = Query(None),
     habit_status: str | None = Query(None, alias="status"),
     scaffolding_status: str | None = Query(None),
     db: Session = Depends(get_db),
-) -> list[Habit]:
+) -> HabitListResponse:
     """List habits with composable filters."""
     query = db.query(Habit)
 
@@ -79,7 +80,11 @@ def list_habits(
     if scaffolding_status is not None:
         query = query.filter(Habit.scaffolding_status == scaffolding_status)
 
-    return query.order_by(Habit.created_at).all()
+    results = query.order_by(Habit.created_at).all()
+    return HabitListResponse(
+        items=[HabitResponse.model_validate(h) for h in results],
+        count=len(results),
+    )
 
 
 @router.get("/{habit_id}", response_model=HabitDetailResponse)

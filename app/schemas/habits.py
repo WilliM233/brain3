@@ -142,6 +142,13 @@ class HabitDetailResponse(HabitResponse):
     routine: RoutineResponse | None = None
 
 
+class HabitListResponse(BaseModel):
+    """Envelope for GET /api/habits/ — wraps the item list with a count."""
+
+    items: list[HabitResponse]
+    count: int
+
+
 # ---------------------------------------------------------------------------
 # Habit Completion — POST /api/habits/{id}/complete
 # ---------------------------------------------------------------------------

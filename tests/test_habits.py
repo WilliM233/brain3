@@ -286,6 +286,206 @@ class TestGetHabit:
 
 
 # ---------------------------------------------------------------------------
+# [2A-Enh-01] effective_graduation_params composite field
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveGraduationParams:
+    """Amendment 05: composite graduation params on habit read responses.
+
+    Source labels `"override"` / `"friction_default"` come from spec
+    Amendment 05. Pre-existing `graduation_status_endpoint` uses its own
+    legacy `"per_habit"` label; that divergence is tracked under D8-X and
+    deliberately not touched here.
+    """
+
+    def test_get_habit_friction_default_source(self, client):
+        """No overrides, friction_score=3 → friction-tier defaults, source=friction_default."""
+        habit = make_habit(client, friction_score=3)
+        resp = client.get(f"/api/habits/{habit['id']}")
+        assert resp.status_code == 200
+        params = resp.json()["effective_graduation_params"]
+        assert params == {
+            "window_days": 45,
+            "target_rate": 0.85,
+            "threshold_days": 45,
+            "source": "friction_default",
+        }
+
+    def test_get_habit_friction_default_with_null_friction(self, client):
+        """No overrides, no friction_score → middle-tier defaults."""
+        habit = make_habit(client)
+        resp = client.get(f"/api/habits/{habit['id']}")
+        params = resp.json()["effective_graduation_params"]
+        assert params["source"] == "friction_default"
+        assert params["window_days"] == 45
+        assert params["target_rate"] == 0.85
+        assert params["threshold_days"] == 45
+
+    def test_get_habit_override_source_single_column(self, client):
+        """Any single override column non-NULL → source=override."""
+        habit = make_habit(client, friction_score=1, graduation_window=90)
+        resp = client.get(f"/api/habits/{habit['id']}")
+        params = resp.json()["effective_graduation_params"]
+        assert params["source"] == "override"
+        assert params["window_days"] == 90  # override
+        assert params["target_rate"] == 0.85  # friction-1 default
+        assert params["threshold_days"] == 30  # friction-1 default
+
+    def test_get_habit_override_source_all_three_columns(self, client):
+        """All three overrides set → source=override, values come from overrides."""
+        habit = make_habit(
+            client,
+            friction_score=1,
+            graduation_window=100,
+            graduation_target=0.70,
+            graduation_threshold=100,
+        )
+        resp = client.get(f"/api/habits/{habit['id']}")
+        params = resp.json()["effective_graduation_params"]
+        assert params == {
+            "window_days": 100,
+            "target_rate": 0.70,
+            "threshold_days": 100,
+            "source": "override",
+        }
+
+    def test_get_habit_applies_re_scaffold_tightening_friction_default(self, db, client):
+        """re_scaffold_count>0 tightens values — source stays friction_default."""
+        import uuid
+
+        from app.models import Habit
+
+        habit = Habit(
+            id=uuid.uuid4(),
+            title="Tightened habit",
+            frequency="daily",
+            status="active",
+            scaffolding_status="tracking",
+            friction_score=1,  # baseline defaults: (30, 0.85, 30)
+            re_scaffold_count=2,
+        )
+        db.add(habit)
+        db.commit()
+
+        resp = client.get(f"/api/habits/{habit.id}")
+        params = resp.json()["effective_graduation_params"]
+        # Double re-scaffold from (30, 0.85, 30): (37, 0.90, 37) → (46, 0.95, 46)
+        assert params == {
+            "window_days": 46,
+            "target_rate": 0.95,
+            "threshold_days": 46,
+            "source": "friction_default",
+        }
+
+    def test_get_habit_re_scaffold_tightens_overrides(self, db, client):
+        """Tightening applies to override baseline; source stays override."""
+        import uuid
+
+        from app.models import Habit
+
+        habit = Habit(
+            id=uuid.uuid4(),
+            title="Tightened override",
+            frequency="daily",
+            status="active",
+            scaffolding_status="tracking",
+            graduation_window=60,
+            graduation_target=0.70,
+            graduation_threshold=60,
+            re_scaffold_count=1,
+        )
+        db.add(habit)
+        db.commit()
+
+        resp = client.get(f"/api/habits/{habit.id}")
+        params = resp.json()["effective_graduation_params"]
+        # Single re-scaffold from (60, 0.70, 60): (75, 0.75, 75)
+        assert params["window_days"] == 75
+        assert params["target_rate"] == 0.75
+        assert params["threshold_days"] == 75
+        assert params["source"] == "override"
+
+    def test_list_habits_items_include_effective_graduation_params(self, client):
+        """Each item in GET /api/habits includes effective_graduation_params."""
+        make_habit(client, title="H1", friction_score=1)
+        make_habit(
+            client,
+            title="H2",
+            friction_score=5,
+            graduation_window=100,
+        )
+        resp = client.get("/api/habits")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 2
+        for item in body["items"]:
+            assert "effective_graduation_params" in item
+            assert set(item["effective_graduation_params"].keys()) == {
+                "window_days",
+                "target_rate",
+                "threshold_days",
+                "source",
+            }
+        sources = {
+            item["title"]: item["effective_graduation_params"]["source"]
+            for item in body["items"]
+        }
+        assert sources["H1"] == "friction_default"
+        assert sources["H2"] == "override"
+
+    def test_effective_graduation_params_ignored_in_post_body(self, client):
+        """Request-body effective_graduation_params is ignored; response reflects computed value."""
+        resp = client.post(
+            "/api/habits",
+            json={
+                "title": "Ignored field",
+                "frequency": "daily",
+                "friction_score": 1,
+                "effective_graduation_params": {
+                    "window_days": 999,
+                    "target_rate": 0.01,
+                    "threshold_days": 999,
+                    "source": "override",
+                },
+            },
+        )
+        assert resp.status_code == 201
+        params = resp.json()["effective_graduation_params"]
+        # Computed from friction_score=1 with no overrides — NOT echoed
+        assert params == {
+            "window_days": 30,
+            "target_rate": 0.85,
+            "threshold_days": 30,
+            "source": "friction_default",
+        }
+
+    def test_effective_graduation_params_ignored_in_patch_body(self, client):
+        """PATCH body cannot set effective_graduation_params — it stays computed."""
+        habit = make_habit(client, friction_score=3)
+        resp = client.patch(
+            f"/api/habits/{habit['id']}",
+            json={
+                "effective_graduation_params": {
+                    "window_days": 1,
+                    "target_rate": 0.01,
+                    "threshold_days": 1,
+                    "source": "override",
+                },
+            },
+        )
+        assert resp.status_code == 200
+        params = resp.json()["effective_graduation_params"]
+        # friction_score=3 defaults still apply
+        assert params == {
+            "window_days": 45,
+            "target_rate": 0.85,
+            "threshold_days": 45,
+            "source": "friction_default",
+        }
+
+
+# ---------------------------------------------------------------------------
 # PATCH /api/habits/{id}
 # ---------------------------------------------------------------------------
 

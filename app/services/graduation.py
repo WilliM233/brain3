@@ -180,7 +180,32 @@ def evaluate_graduation(
             blocking_reasons=["No notification data in evaluation window"],
         )
 
-    already_done_count = sum(1 for n in notifications if n.response == "Already done")
+    # D5 hybrid credit (Amendment 12): an expired nudge with no response can be
+    # credited by a same-date HabitCompletion row. Reflects that multiple
+    # low-friction completion paths (direct complete, routine cascade,
+    # reconciliation) all represent "I did it" from the user's perspective.
+    # Explicit responses — positive or negative — always win over completion
+    # rows: "Already done" still counts on its own, and an explicit non-"Already
+    # done" response (e.g., "Skip today") is never overridden.
+    completion_dates = {
+        c.completed_at
+        for c in db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.completed_at >= window_start.date(),
+            HabitCompletion.completed_at <= now.date(),
+        )
+        .all()
+    }
+
+    already_done_count = 0
+    for n in notifications:
+        if n.response == "Already done":
+            already_done_count += 1
+        elif n.status == "expired" and n.response is None:
+            if n.scheduled_at.date() in completion_dates:
+                already_done_count += 1
+
     current_rate = already_done_count / total_notifications
 
     meets_rate = current_rate >= target

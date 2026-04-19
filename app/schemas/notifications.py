@@ -118,3 +118,10 @@ class NotificationResponse(BaseModel):
     rule_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class NotificationListResponse(BaseModel):
+    """Envelope for GET /api/notifications/ — wraps the item list with a count."""
+
+    items: list[NotificationResponse]
+    count: int

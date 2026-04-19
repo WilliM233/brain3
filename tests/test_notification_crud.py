@@ -221,7 +221,16 @@ class TestListNotifications:
         """Empty list when no notifications exist."""
         resp = client.get(BASE_URL)
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
+
+    def test_list_single(self, client):
+        """Single-element list returns envelope with count=1."""
+        make_notification(client)
+        resp = client.get(BASE_URL)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
 
     def test_list_returns_all(self, client):
         """List returns all created notifications."""
@@ -229,16 +238,18 @@ class TestListNotifications:
         make_notification(client, notification_type="checkin_prompt")
         resp = client.get(BASE_URL)
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        data = resp.json()
+        assert data["count"] == 2
+        assert len(data["items"]) == 2
 
     def test_filter_by_notification_type(self, client):
         """Filter by notification_type."""
         make_notification(client, notification_type="habit_nudge")
         make_notification(client, notification_type="checkin_prompt")
         resp = client.get(BASE_URL, params={"notification_type": "habit_nudge"})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["notification_type"] == "habit_nudge"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["notification_type"] == "habit_nudge"
 
     def test_filter_by_status(self, client):
         """Filter by status."""
@@ -248,18 +259,18 @@ class TestListNotifications:
         make_notification(client)  # stays pending
 
         resp = client.get(BASE_URL, params={"status": "delivered"})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["status"] == "delivered"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["status"] == "delivered"
 
     def test_filter_by_target_entity_type(self, client):
         """Filter by target_entity_type."""
         make_notification(client, target_entity_type="habit")
         make_notification(client, target_entity_type="routine")
         resp = client.get(BASE_URL, params={"target_entity_type": "routine"})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["target_entity_type"] == "routine"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["target_entity_type"] == "routine"
 
     def test_filter_by_target_entity_id(self, client):
         """Filter by target_entity_id."""
@@ -267,18 +278,18 @@ class TestListNotifications:
         make_notification(client, target_entity_id=entity_id)
         make_notification(client)  # different entity_id
         resp = client.get(BASE_URL, params={"target_entity_id": entity_id})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["target_entity_id"] == entity_id
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["target_entity_id"] == entity_id
 
     def test_filter_by_scheduled_by(self, client):
         """Filter by scheduled_by."""
         make_notification(client, scheduled_by="system")
         make_notification(client, scheduled_by="claude")
         resp = client.get(BASE_URL, params={"scheduled_by": "claude"})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["scheduled_by"] == "claude"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["scheduled_by"] == "claude"
 
     def test_filter_by_date_range(self, client):
         """Filter by scheduled_after and scheduled_before."""
@@ -292,9 +303,9 @@ class TestListNotifications:
                 "scheduled_before": "2026-04-25T00:00:00Z",
             },
         )
-        results = resp.json()
-        assert len(results) == 1
-        assert "2026-04-20" in results[0]["scheduled_at"]
+        data = resp.json()
+        assert data["count"] == 1
+        assert "2026-04-20" in data["items"][0]["scheduled_at"]
 
     def test_filter_has_response_true(self, client):
         """has_response=true returns only responded notifications."""
@@ -305,9 +316,9 @@ class TestListNotifications:
         make_notification(client)  # stays pending
 
         resp = client.get(BASE_URL, params={"has_response": True})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["status"] == "responded"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["status"] == "responded"
 
     def test_filter_has_response_false(self, client):
         """has_response=false returns non-responded notifications."""
@@ -317,9 +328,9 @@ class TestListNotifications:
         make_notification(client)  # stays pending
 
         resp = client.get(BASE_URL, params={"has_response": False})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["status"] == "pending"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["status"] == "pending"
 
     def test_filter_by_rule_id(self, client, db):
         """Filter by rule_id."""
@@ -335,16 +346,16 @@ class TestListNotifications:
         make_notification(client, rule_id=rid)
         make_notification(client)  # no rule_id
         resp = client.get(BASE_URL, params={"rule_id": rid})
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["rule_id"] == rid
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["rule_id"] == rid
 
     def test_filter_by_delivery_type(self, client):
         """Filter by delivery_type."""
         make_notification(client)
         resp = client.get(BASE_URL, params={"delivery_type": "notification"})
-        results = resp.json()
-        assert len(results) == 1
+        data = resp.json()
+        assert data["count"] == 1
 
     def test_combined_filters(self, client):
         """Multiple filters combine with AND logic."""
@@ -373,9 +384,9 @@ class TestListNotifications:
                 "scheduled_by": "claude",
             },
         )
-        results = resp.json()
-        assert len(results) == 1
-        assert results[0]["target_entity_id"] == target_id
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["target_entity_id"] == target_id
 
     def test_list_sorted_by_scheduled_at_desc(self, client):
         """List is sorted by scheduled_at descending."""
@@ -384,12 +395,13 @@ class TestListNotifications:
         make_notification(client, scheduled_at="2026-04-15T09:00:00Z")
 
         resp = client.get(BASE_URL)
-        results = resp.json()
-        assert len(results) == 3
+        data = resp.json()
+        assert data["count"] == 3
+        items = data["items"]
         # Most recent first
-        assert "2026-04-20" in results[0]["scheduled_at"]
-        assert "2026-04-15" in results[1]["scheduled_at"]
-        assert "2026-04-10" in results[2]["scheduled_at"]
+        assert "2026-04-20" in items[0]["scheduled_at"]
+        assert "2026-04-15" in items[1]["scheduled_at"]
+        assert "2026-04-10" in items[2]["scheduled_at"]
 
 
 # ---------------------------------------------------------------------------

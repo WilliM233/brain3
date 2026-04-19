@@ -26,6 +26,7 @@ from app.database import get_db
 from app.models import NotificationQueue
 from app.schemas.notifications import (
     NotificationCreate,
+    NotificationListResponse,
     NotificationRespondRequest,
     NotificationResponse,
     NotificationUpdate,
@@ -90,7 +91,7 @@ def create_notification(
 # GET list — with composable filters
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[NotificationResponse])
+@router.get("/", response_model=NotificationListResponse)
 def list_notifications(
     notification_type: str | None = Query(None),
     notification_status: str | None = Query(None, alias="status"),
@@ -103,7 +104,7 @@ def list_notifications(
     has_response: bool | None = Query(None),
     rule_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
-) -> list[NotificationQueue]:
+) -> NotificationListResponse:
     """List notifications with composable filters."""
     query = db.query(NotificationQueue)
 
@@ -134,7 +135,11 @@ def list_notifications(
     if rule_id is not None:
         query = query.filter(NotificationQueue.rule_id == rule_id)
 
-    return query.order_by(NotificationQueue.scheduled_at.desc()).all()
+    results = query.order_by(NotificationQueue.scheduled_at.desc()).all()
+    return NotificationListResponse(
+        items=[NotificationResponse.model_validate(n) for n in results],
+        count=len(results),
+    )
 
 
 # ---------------------------------------------------------------------------

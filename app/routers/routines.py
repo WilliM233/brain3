@@ -29,6 +29,7 @@ from app.schemas.routines import (
     RoutineCompleteResponse,
     RoutineCreate,
     RoutineDetailResponse,
+    RoutineListResponse,
     RoutineResponse,
     RoutineScheduleCreate,
     RoutineScheduleResponse,
@@ -63,14 +64,14 @@ def create_routine(payload: RoutineCreate, db: Session = Depends(get_db)) -> Rou
     return routine
 
 
-@router.get("/", response_model=list[RoutineResponse])
+@router.get("/", response_model=RoutineListResponse)
 def list_routines(
     domain_id: UUID | None = Query(None),
     routine_status: str | None = Query(None, alias="status"),
     frequency: str | None = Query(None),
     streak_broken: bool | None = Query(None),
     db: Session = Depends(get_db),
-) -> list[Routine]:
+) -> RoutineListResponse:
     """List routines with optional filters."""
     query = db.query(Routine)
 
@@ -83,7 +84,11 @@ def list_routines(
     if streak_broken is True:
         query = query.filter(Routine.current_streak == 0, Routine.status == "active")
 
-    return query.order_by(Routine.created_at).all()
+    results = query.order_by(Routine.created_at).all()
+    return RoutineListResponse(
+        items=[RoutineResponse.model_validate(r) for r in results],
+        count=len(results),
+    )
 
 
 @router.get("/{routine_id}", response_model=RoutineDetailResponse)

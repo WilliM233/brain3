@@ -98,6 +98,13 @@ class RoutineDetailResponse(RoutineResponse):
     schedules: list["RoutineScheduleResponse"] = []
 
 
+class RoutineListResponse(BaseModel):
+    """Envelope for GET /api/routines/ — wraps the item list with a count."""
+
+    items: list[RoutineResponse]
+    count: int
+
+
 # ---------------------------------------------------------------------------
 # RoutineSchedule schemas
 # ---------------------------------------------------------------------------

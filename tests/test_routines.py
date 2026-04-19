@@ -135,14 +135,26 @@ class TestListRoutines:
     def test_list_routines_empty(self, client):
         resp = client.get("/api/routines")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
+
+    def test_list_routines_single(self, client):
+        domain = make_domain(client)
+        make_routine(client, domain["id"], title="Only")
+        resp = client.get("/api/routines")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["title"] == "Only"
 
     def test_list_routines(self, client):
         domain = make_domain(client)
         make_routine(client, domain["id"], title="A")
         make_routine(client, domain["id"], title="B")
         resp = client.get("/api/routines")
-        assert len(resp.json()) == 2
+        data = resp.json()
+        assert data["count"] == 2
+        assert len(data["items"]) == 2
 
     def test_filter_by_domain_id(self, client):
         d1 = make_domain(client, name="D1")
@@ -150,27 +162,27 @@ class TestListRoutines:
         make_routine(client, d1["id"], title="R1")
         make_routine(client, d2["id"], title="R2")
         resp = client.get(f"/api/routines?domain_id={d1['id']}")
-        routines = resp.json()
-        assert len(routines) == 1
-        assert routines[0]["title"] == "R1"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "R1"
 
     def test_filter_by_status(self, client):
         domain = make_domain(client)
         make_routine(client, domain["id"], title="Active", status="active")
         make_routine(client, domain["id"], title="Paused", status="paused")
         resp = client.get("/api/routines?status=paused")
-        routines = resp.json()
-        assert len(routines) == 1
-        assert routines[0]["title"] == "Paused"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Paused"
 
     def test_filter_by_frequency(self, client):
         domain = make_domain(client)
         make_routine(client, domain["id"], title="Daily", frequency="daily")
         make_routine(client, domain["id"], title="Weekly", frequency="weekly")
         resp = client.get("/api/routines?frequency=weekly")
-        routines = resp.json()
-        assert len(routines) == 1
-        assert routines[0]["title"] == "Weekly"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Weekly"
 
     def test_filter_streak_broken(self, client):
         domain = make_domain(client)
@@ -182,9 +194,9 @@ class TestListRoutines:
         client.post(f"/api/routines/{r_ok['id']}/complete")
 
         resp = client.get("/api/routines?streak_broken=true")
-        routines = resp.json()
-        assert len(routines) == 1
-        assert routines[0]["title"] == "Broken"
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["title"] == "Broken"
         # Paused routine should NOT appear even though streak is 0
 
 

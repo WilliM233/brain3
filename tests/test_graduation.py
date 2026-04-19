@@ -483,6 +483,126 @@ class TestEvaluateGraduation:
 
 
 # ===========================================================================
+# D5 hybrid credit — [2G-Bug-02]
+# ===========================================================================
+
+
+class TestEvaluateGraduationHybridCredit:
+    """Expired nudges credited by same-date HabitCompletion rows.
+
+    See `[2G-01]` Amendment 12 / brain3#184. Multiple low-friction completion
+    paths (direct complete, routine cascade, reconciliation) all count toward
+    graduation — explicit responses still win over completion rows.
+    """
+
+    def test_routine_cascade_completion_credited_toward_graduation(self, db):
+        """Expired nudges with same-date routine_cascade completions credit the rate."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 10 expired (unresponded) nudges, each with a matching routine_cascade
+        # completion on the same date.
+        for i in range(10):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            db.add(
+                HabitCompletion(
+                    id=uuid.uuid4(),
+                    habit_id=habit.id,
+                    completed_at=date.today() - timedelta(days=days_ago),
+                    source="routine_cascade",
+                ),
+            )
+        db.commit()
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 10
+        assert result.already_done_count == 10
+        assert result.current_rate == 1.0
+        assert result.meets_rate is True
+        assert result.eligible is True
+
+    def test_individual_completion_credited_toward_graduation(self, db):
+        """Expired nudges with same-date individual completions credit the rate."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 10 expired (unresponded) nudges; first 9 have matching individual
+        # completions, last 1 does not → 90% hybrid-credited rate.
+        for i in range(10):
+            days_ago = i + 1
+            _create_notification(db, habit.id, None, "expired", days_ago=days_ago)
+            if i < 9:
+                _create_completion(db, habit.id, days_ago=days_ago)
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 10
+        assert result.already_done_count == 9
+        assert result.current_rate == 0.9
+        assert result.eligible is True
+
+    def test_no_credit_when_no_completion_row(self, db):
+        """Regression guard: expired nudges without a matching completion do NOT get credit."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 10 expired nudges, zero completions anywhere.
+        for i in range(10):
+            _create_notification(db, habit.id, None, "expired", days_ago=i + 1)
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 10
+        assert result.already_done_count == 0
+        assert result.current_rate == 0.0
+        assert result.eligible is False
+        assert any("below target" in r for r in result.blocking_reasons)
+
+    def test_no_credit_when_date_mismatch(self, db):
+        """Completion rows credit only same-date expired nudges."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 5 expired nudges on days 1-5. Completions exist, but on days 10-14.
+        # Date mismatch → no credit.
+        for i in range(5):
+            _create_notification(db, habit.id, None, "expired", days_ago=i + 1)
+        for i in range(5):
+            _create_completion(db, habit.id, days_ago=i + 10)
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 5
+        assert result.already_done_count == 0
+        assert result.current_rate == 0.0
+
+    def test_response_already_done_still_counts_without_completion_row(self, db):
+        """Back-compat: explicit 'Already done' responses count regardless of completion rows."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 10 nudges, all explicit "Already done" responses. No completion rows.
+        for i in range(10):
+            _create_notification(db, habit.id, "Already done", "responded", days_ago=i + 1)
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 10
+        assert result.already_done_count == 10
+        assert result.current_rate == 1.0
+        assert result.eligible is True
+
+    def test_explicit_negative_response_not_overridden_by_completion(self, db):
+        """Explicit non-'Already done' responses win — completion row does NOT override."""
+        habit = _create_habit(db, accountable_since=date.today() - timedelta(days=60))
+        # 10 notifications all responded "Skip today". Completions exist on
+        # every same day. Per spec Acceptance Criterion #4, explicit negative
+        # responses are never overridden.
+        for i in range(10):
+            days_ago = i + 1
+            _create_notification(db, habit.id, "Skip today", "responded", days_ago=days_ago)
+            _create_completion(db, habit.id, days_ago=days_ago)
+
+        result = evaluate_graduation(db, habit.id)
+
+        assert result.total_notifications == 10
+        assert result.already_done_count == 0
+        assert result.current_rate == 0.0
+
+
+# ===========================================================================
 # Schema validation — friction_score on create/update
 # ===========================================================================
 

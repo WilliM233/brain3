@@ -175,6 +175,13 @@ class RuleRead(BaseModel):
     updated_at: datetime
 
 
+class RuleListResponse(BaseModel):
+    """Envelope for GET /api/rules/ — wraps the item list with a count."""
+
+    items: list[RuleRead]
+    count: int
+
+
 class RuleEvaluationResultResponse(BaseModel):
     """API response model for a rule evaluation result."""
 

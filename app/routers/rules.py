@@ -29,6 +29,7 @@ from app.schemas.rule import (
     RuleCreate,
     RuleEntityType,
     RuleEvaluationResultResponse,
+    RuleListResponse,
     RuleRead,
     RuleUpdate,
 )
@@ -57,7 +58,7 @@ def create_rule(
 # GET list — with composable filters
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[RuleRead])
+@router.get("/", response_model=RuleListResponse)
 def list_rules(
     entity_type: RuleEntityType | None = Query(None),
     enabled: bool | None = Query(None),
@@ -65,7 +66,7 @@ def list_rules(
     entity_id: UUID | None = Query(None),
     is_default: bool | None = Query(None),
     db: Session = Depends(get_db),
-) -> list[Rule]:
+) -> RuleListResponse:
     """List rules with composable filters (AND logic)."""
     query = db.query(Rule)
 
@@ -80,7 +81,11 @@ def list_rules(
     if is_default is not None:
         query = query.filter(Rule.is_default == is_default)
 
-    return query.order_by(Rule.created_at.desc()).all()
+    results = query.order_by(Rule.created_at.desc()).all()
+    return RuleListResponse(
+        items=[RuleRead.model_validate(r) for r in results],
+        count=len(results),
+    )
 
 
 # ---------------------------------------------------------------------------

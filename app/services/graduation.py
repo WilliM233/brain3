@@ -481,8 +481,34 @@ def evaluate_frequency_step_down(
             ],
         )
 
-    # Compute "already done" rate
-    already_done_count = sum(1 for n in notifications if n.response == "Already done")
+    # D6 hybrid credit (Amendment 15): mirrors [2G-01] D5 — an expired nudge
+    # with no response can be credited by a same-date HabitCompletion row.
+    # Scoped to the LIMIT-14 scheduled_at span so the completion range adapts
+    # naturally to the habit's current frequency. Explicit responses win:
+    # "Already done" still counts on its own, and explicit non-"Already done"
+    # responses (e.g., "Skip today") are never overridden.
+    # Duplicates [2G-01]'s inline implementation; extraction is Wave 3 #186.
+    earliest_date = notifications[-1].scheduled_at.date()
+    latest_date = notifications[0].scheduled_at.date()
+    completion_dates = {
+        c.completed_at
+        for c in db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.completed_at >= earliest_date,
+            HabitCompletion.completed_at <= latest_date,
+        )
+        .all()
+    }
+
+    already_done_count = 0
+    for n in notifications:
+        if n.response == "Already done":
+            already_done_count += 1
+        elif n.status == "expired" and n.response is None:
+            if n.scheduled_at.date() in completion_dates:
+                already_done_count += 1
+
     rate = already_done_count / total
 
     # Check if already at minimum stepped frequency

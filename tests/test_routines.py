@@ -818,3 +818,111 @@ class TestScriptedRoutineCompletion:
         body = resp.json()
         assert body["current_streak"] == 1
         assert body["streak_was_broken"] is True
+
+
+# ---------------------------------------------------------------------------
+# [2C-26] Part C — routine completion idempotency on (routine, date, status)
+# ---------------------------------------------------------------------------
+
+class TestScriptedRoutineCompletionIdempotency:
+    """Same (routine, date, status) tuple dedups; mixed status on same date persists."""
+
+    def _make_scripted_routine(self, client):
+        domain = make_domain(client)
+        routine = make_routine(client, domain["id"])
+        h1 = make_habit(client, routine_id=routine["id"], title="Habit A")
+        h2 = make_habit(client, routine_id=routine["id"], title="Habit B")
+        return routine, h1, h2
+
+    def test_duplicate_same_status_returns_existing_row(self, client, db):
+        from app.models import RoutineCompletion
+
+        routine, _, _ = self._make_scripted_routine(client)
+        first = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        second = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+
+        assert second["completion_id"] == first["completion_id"]
+        assert second["status"] == first["status"]
+        rows = (
+            db.query(RoutineCompletion)
+            .filter(RoutineCompletion.routine_id == UUID(routine["id"]))
+            .all()
+        )
+        assert len(rows) == 1
+
+    def test_idempotent_streak_unchanged_on_second_call(self, client):
+        routine, _, _ = self._make_scripted_routine(client)
+        first = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        second = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        assert first["current_streak"] == 1
+        assert second["current_streak"] == 1
+        assert second["streak_was_broken"] is False
+
+    def test_idempotent_no_recascade_to_habits(self, client, db):
+        from app.models import HabitCompletion
+
+        routine, h1, h2 = self._make_scripted_routine(client)
+        client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        )
+        # Snapshot habit completion count after the first cascade
+        first_count = db.query(HabitCompletion).count()
+
+        retry = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        assert retry["habits_completed"] == []
+        # No new habit completions on the idempotent retry
+        assert db.query(HabitCompletion).count() == first_count
+
+    def test_cross_status_same_date_persists_two_rows(self, client, db):
+        from app.models import RoutineCompletion
+
+        routine, _, _ = self._make_scripted_routine(client)
+        all_done = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        partial = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "partial", "freeform_note": "Reconciliation note"},
+        ).json()
+
+        assert all_done["completion_id"] != partial["completion_id"]
+        rows = (
+            db.query(RoutineCompletion)
+            .filter(RoutineCompletion.routine_id == UUID(routine["id"]))
+            .order_by(RoutineCompletion.status)
+            .all()
+        )
+        statuses = [r.status for r in rows]
+        assert statuses == ["all_done", "partial"]
+
+    def test_cross_status_streak_unchanged_on_second_status(self, client):
+        """Both same-day rows count as one day for streak purposes (idempotent
+        evaluate_streak on identical completed_date)."""
+        routine, _, _ = self._make_scripted_routine(client)
+        first = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "all_done"},
+        ).json()
+        second = client.post(
+            f"/api/routines/{routine['id']}/complete",
+            json={"status": "partial"},
+        ).json()
+        assert first["current_streak"] == 1
+        assert second["current_streak"] == 1

@@ -216,6 +216,30 @@ def complete_routine(
 
     # --- Scripted path (has child habits) ----------------------------------
 
+    # Idempotency check — return existing completion if one exists for this
+    # (routine, date, status) tuple. Cross-status retries on the same date
+    # create separate rows; same-status retries dedup to the existing row.
+    existing_completion = (
+        db.query(RoutineCompletion)
+        .filter(
+            RoutineCompletion.routine_id == routine_id,
+            RoutineCompletion.completed_at == completed_date,
+            RoutineCompletion.status == completion_status,
+        )
+        .first()
+    )
+    if existing_completion:
+        return {
+            "routine_id": routine.id,
+            "completed_date": existing_completion.completed_at,
+            "current_streak": routine.current_streak,
+            "best_streak": routine.best_streak,
+            "streak_was_broken": False,
+            "completion_id": existing_completion.id,
+            "status": existing_completion.status,
+            "habits_completed": [],
+        }
+
     habits_completed: list[UUID] = []
 
     if completion_status == "skipped":

@@ -741,6 +741,12 @@ class RoutineCompletion(Base):
             "status IN ('all_done', 'partial', 'skipped')",
             name="ck_routine_completions_status",
         ),
+        UniqueConstraint(
+            "routine_id",
+            "completed_at",
+            "status",
+            name="uq_routine_completions_routine_date_status",
+        ),
         Index(
             "ix_routine_completions_routine_completed",
             "routine_id",

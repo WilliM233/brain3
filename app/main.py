@@ -43,6 +43,7 @@ from app.routers import (
     tags,
     tasks,
 )
+from app.services.delivery_promoter import install_delivery_promoter
 
 app = FastAPI(
     title="BRAIN 3.0",
@@ -61,6 +62,11 @@ app.add_middleware(
 # Bearer auth on /api/app/*. Skipped with a warning when the token is unset
 # (dev convenience) — production must set BRAIN3_APP_BEARER_TOKEN.
 install_app_bearer_auth(app, settings.APP_BEARER_TOKEN)
+
+# Delivery promoter ([2C-05a]) — asyncio task that polls notification_queue
+# and transitions due rows from pending → delivered. Stream D will expand
+# this into full scheduler infrastructure.
+install_delivery_promoter(app)
 
 
 @app.get("/health")

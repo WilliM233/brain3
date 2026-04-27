@@ -4,6 +4,11 @@ All notable changes to BRAIN 3.0 will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Lightweight delivery promoter — asyncio background task spawned on app startup that polls `notification_queue` every 30s for `pending` rows whose `scheduled_at` has passed and transitions them to `delivered` (recomputing `expires_at` via `calculate_expires_at`). Cancelled cleanly on shutdown; per-tick exceptions are caught and logged so one bad row cannot kill the poller. Proto-Stream-D scaffolding for the v2.0.0 notification loop (#204)
+
 ## [v1.3.0] — Rules Engine (Phase 2 Stream F)
 
 ### Added

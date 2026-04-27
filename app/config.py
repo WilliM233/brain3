@@ -50,6 +50,18 @@ class Settings(BaseSettings):
         default="America/Chicago", validation_alias="BRAIN3_SERVER_TZ",
     )
 
+    # Firebase Cloud Messaging (FCM) HTTP v1 — push delivery to the companion
+    # app. Both must be set in production. When either is unset, FCM dispatch
+    # is skipped with a startup warning (dev convenience, mirrors the
+    # APP_BEARER_TOKEN pattern). The service-account JSON path is loaded at
+    # call time, so rotation does not require a restart.
+    FCM_PROJECT_ID: str | None = Field(
+        default=None, validation_alias="BRAIN3_FCM_PROJECT_ID",
+    )
+    FCM_SERVICE_ACCOUNT_JSON_PATH: str | None = Field(
+        default=None, validation_alias="BRAIN3_FCM_SERVICE_ACCOUNT_JSON_PATH",
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", populate_by_name=True,
     )

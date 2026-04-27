@@ -16,6 +16,7 @@
 
 """CRUD endpoints for the Notification Queue."""
 
+import logging
 from datetime import UTC, date, datetime
 from uuid import UUID
 
@@ -31,7 +32,10 @@ from app.schemas.notifications import (
     NotificationResponse,
     NotificationUpdate,
 )
+from app.services.delivery import dispatch_push
 from app.services.notification_defaults import calculate_expires_at, get_default_responses
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -286,7 +290,8 @@ async def update_notification(
         setattr(notification, field, value)
 
     # Auto-populate expires_at on delivery
-    if updates.get("status") == "delivered":
+    delivered_now = updates.get("status") == "delivered"
+    if delivered_now:
         delivered_at = datetime.now(tz=UTC)
         notification.expires_at = calculate_expires_at(
             notification.notification_type,
@@ -297,6 +302,21 @@ async def update_notification(
 
     db.commit()
     db.refresh(notification)
+
+    # Push to every registered device on the pending → delivered transition.
+    # Synchronous at Phase 2 single-user scale; async/queue is a Chunk 5
+    # concern (see ticket Out of Scope). Failures inside dispatch_push are
+    # logged per-device and never raised here.
+    if delivered_now:
+        try:
+            dispatch_push(notification, db)
+        except Exception as exc:  # noqa: BLE001 — never fail the PATCH on dispatch
+            logger.warning(
+                "FCM dispatch failed for notification %s: %s",
+                notification.id,
+                exc,
+            )
+
     return notification
 
 

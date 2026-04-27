@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import NotificationQueue
+from app.services.delivery import dispatch_push
 from app.services.notification_defaults import calculate_expires_at
 
 logger = logging.getLogger(__name__)
@@ -56,13 +57,18 @@ _promoter_task: asyncio.Task[None] | None = None
 def promote_due_notifications(db: Session) -> int:
     """Promote all pending notifications whose ``scheduled_at`` is in the past.
 
-    Transitions each eligible row to ``delivered`` and recomputes
-    ``expires_at`` via ``calculate_expires_at``. The expires_at logic
-    matches the PATCH handler's ``status='delivered'`` side-effect — kept
-    inline rather than extracted into a shared helper because [2C-05] FCM
-    dispatch is the natural moment to refactor this seam (see PR body).
+    Transitions each eligible row to ``delivered``, recomputes
+    ``expires_at`` via ``calculate_expires_at``, and dispatches the push
+    via :func:`app.services.delivery.dispatch_push` — the same side-
+    effect the PATCH handler triggers on the interactive ``pending →
+    delivered`` transition. Per [2C-05] AC #1 (carry-forward from
+    [2C-05a] PR #212 deviation D-18), the promoter must invoke FCM
+    dispatch when it performs the transition.
 
-    Returns the number of rows promoted.
+    Per-row dispatch errors are caught and logged; one bad device or
+    network blip must not stop the rest of the batch. Returns the
+    number of rows promoted (independent of how many devices the push
+    actually reached).
     """
     now = datetime.now(tz=UTC)
     due = (
@@ -83,6 +89,15 @@ def promote_due_notifications(db: Session) -> int:
         )
     if due:
         db.commit()
+    for row in due:
+        try:
+            dispatch_push(row, db)
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning(
+                "delivery promoter: dispatch_push failed for %s: %s",
+                row.id,
+                exc,
+            )
     return len(due)
 
 

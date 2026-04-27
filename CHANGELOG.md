@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Lightweight delivery promoter — asyncio background task spawned on app startup that polls `notification_queue` every 30s for `pending` rows whose `scheduled_at` has passed and transitions them to `delivered` (recomputing `expires_at` via `calculate_expires_at`). Cancelled cleanly on shutdown; per-tick exceptions are caught and logged so one bad row cannot kill the poller. Proto-Stream-D scaffolding for the v2.0.0 notification loop (#204)
+- Device registration + FCM dispatch — `app_devices` table with unique `fcm_token`, platform check (`android | ios`), and registration timestamps. New `POST /api/app/devices` (upsert, 200/201), `GET /api/app/devices`, and `DELETE /api/app/devices/{id}` endpoints behind the bearer middleware. New `app/services/fcm.py` (FCM HTTP v1 client with cached `google-auth` service-account credentials and structured `FcmResult` / `FcmStatus` outcomes) and `app/services/delivery.py::dispatch_push` (broadcast data-only payload to every registered device, hard-delete on `UNREGISTERED` / `INVALID_ARGUMENT`). Wired into both the PATCH `pending → delivered` handler and the delivery promoter so background-promoted rows trigger pushes too. New env vars `BRAIN3_FCM_PROJECT_ID` and `BRAIN3_FCM_SERVICE_ACCOUNT_JSON_PATH`; both unset in dev skips dispatch with a `NOT_CONFIGURED` result. Adds `google-auth` to `requirements.txt`. (#205)
 
 ## [v1.3.0] — Rules Engine (Phase 2 Stream F)
 

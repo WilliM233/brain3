@@ -266,19 +266,22 @@ class TestRespondErrors:
         assert resp.status_code == 409
         assert "not been delivered" in resp.json()["detail"]
 
-    def test_409_already_responded(self, client):
-        """Responding to an already-responded notification returns 409."""
-        n = make_notification(client, canned_responses=["Done"])
+    def test_409_already_responded_with_different_response(self, client):
+        """Responding to an already-responded notification with a *different*
+        response returns 409. Idempotent retries on the same response are
+        covered in TestRespondIdempotency.
+        """
+        n = make_notification(client, canned_responses=["Done", "Skip"])
         deliver(client, n["id"])
         # First response
         client.post(
             f"{BASE_URL}/{n['id']}/respond",
             json={"response": "Done"},
         )
-        # Second response attempt
+        # Second attempt with a different response — legitimate conflict.
         resp = client.post(
             f"{BASE_URL}/{n['id']}/respond",
-            json={"response": "Done"},
+            json={"response": "Skip"},
         )
         assert resp.status_code == 409
         assert "already been responded to" in resp.json()["detail"]
@@ -339,3 +342,115 @@ class TestRespondErrors:
             json={"response": "Done", "response_note": "x" * 1001},
         )
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Idempotency — (notification_id, response, response_note) tuple
+# ---------------------------------------------------------------------------
+
+class TestRespondIdempotency:
+    """POST /api/notifications/{id}/respond — idempotency contract per [2C-03].
+
+    The response endpoint is idempotent on the (response, response_note)
+    tuple: a repeat with identical values returns 200 with the existing
+    row unchanged. Any divergence (different response, or same response
+    with different note) is a legitimate conflict and returns 409.
+    """
+
+    def test_duplicate_identical_response_is_idempotent(self, client):
+        """Same response + same note twice → 200 both times, identical body,
+        responded_at unchanged on the second call.
+        """
+        n = make_notification(client, canned_responses=["Done"])
+        deliver(client, n["id"])
+
+        first = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Done", "response_note": "Got it"},
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+        assert first_body["status"] == "responded"
+        assert first_body["response"] == "Done"
+        assert first_body["response_note"] == "Got it"
+        first_responded_at = first_body["responded_at"]
+        assert first_responded_at is not None
+
+        second = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Done", "response_note": "Got it"},
+        )
+        assert second.status_code == 200
+        second_body = second.json()
+        # responded_at must NOT be bumped on idempotent retry.
+        assert second_body["responded_at"] == first_responded_at
+        # Whole body matches the first call.
+        assert second_body == first_body
+
+    def test_duplicate_identical_response_no_note(self, client):
+        """Idempotency also holds when response_note is null on both calls."""
+        n = make_notification(client, canned_responses=["Done"])
+        deliver(client, n["id"])
+
+        first = client.post(
+            f"{BASE_URL}/{n['id']}/respond", json={"response": "Done"},
+        )
+        assert first.status_code == 200
+        first_responded_at = first.json()["responded_at"]
+
+        second = client.post(
+            f"{BASE_URL}/{n['id']}/respond", json={"response": "Done"},
+        )
+        assert second.status_code == 200
+        assert second.json()["responded_at"] == first_responded_at
+        assert second.json()["response_note"] is None
+
+    def test_duplicate_with_different_response_is_409(self, client):
+        """Different response on retry → 409, existing row unchanged."""
+        n = make_notification(client, canned_responses=["Done", "Skip"])
+        deliver(client, n["id"])
+
+        first = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Done", "response_note": "Got it"},
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+
+        conflict = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Skip", "response_note": "Got it"},
+        )
+        assert conflict.status_code == 409
+
+        # Existing row unchanged: response, note, and responded_at all preserved.
+        current = client.get(f"{BASE_URL}/{n['id']}").json()
+        assert current["response"] == "Done"
+        assert current["response_note"] == "Got it"
+        assert current["responded_at"] == first_body["responded_at"]
+
+    def test_duplicate_same_response_different_note_is_409(self, client):
+        """Same response but different response_note on retry → 409,
+        existing row unchanged.
+        """
+        n = make_notification(client, canned_responses=["Done"])
+        deliver(client, n["id"])
+
+        first = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Done", "response_note": "Got it"},
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+
+        conflict = client.post(
+            f"{BASE_URL}/{n['id']}/respond",
+            json={"response": "Done", "response_note": "Different note"},
+        )
+        assert conflict.status_code == 409
+
+        # Existing row unchanged.
+        current = client.get(f"{BASE_URL}/{n['id']}").json()
+        assert current["response"] == "Done"
+        assert current["response_note"] == "Got it"
+        assert current["responded_at"] == first_body["responded_at"]

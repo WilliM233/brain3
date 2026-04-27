@@ -174,7 +174,21 @@ def respond_to_notification(
     payload: NotificationRespondRequest,
     db: Session = Depends(get_db),
 ) -> NotificationQueue:
-    """Record a user response to a delivered notification."""
+    """Record a user response to a delivered notification.
+
+    Idempotent on the (notification_id, response, response_note) tuple: a
+    repeat call with the same ``response`` and ``response_note`` as the
+    already-recorded values returns 200 with the existing notification
+    unchanged (no DB write, ``responded_at`` not bumped). A repeat call
+    with a different ``response`` or ``response_note`` is a legitimate
+    conflict and returns 409.
+
+    Idempotent retry contract: clients (e.g. the Stream C canned-response
+    queue) treat a 200 response as "your write was applied — you can
+    clear it from the queue" regardless of whether it was the original
+    write or a retry. The server does not distinguish first-vs-retry in
+    the status code.
+    """
     notification = (
         db.query(NotificationQueue)
         .filter(NotificationQueue.id == notification_id)
@@ -190,6 +204,12 @@ def respond_to_notification(
             detail="Notification has not been delivered yet",
         )
     if notification.status == "responded":
+        if (
+            notification.response == payload.response
+            and notification.response_note == payload.response_note
+        ):
+            # Idempotent retry — return existing row, no write, no status change.
+            return notification
         raise HTTPException(
             status_code=409,
             detail="Notification has already been responded to",

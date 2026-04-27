@@ -16,7 +16,9 @@
 
 """Application configuration via Pydantic Settings."""
 
-from pydantic import Field
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,9 +43,31 @@ class Settings(BaseSettings):
         default=None, validation_alias="BRAIN3_APP_BEARER_TOKEN",
     )
 
+    # IANA zoneinfo key used for TZ-sensitive server-side logic (e.g. EOD-local
+    # routine_checklist expiry). Validated at startup — a bad key fails fast
+    # rather than silently producing wrong expiries.
+    SERVER_TZ: str = Field(
+        default="America/Chicago", validation_alias="BRAIN3_SERVER_TZ",
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", populate_by_name=True,
     )
+
+    @field_validator("SERVER_TZ")
+    @classmethod
+    def _validate_server_tz(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except ZoneInfoNotFoundError as exc:
+            msg = f"SERVER_TZ {v!r} is not a valid IANA zoneinfo key"
+            raise ValueError(msg) from exc
+        return v
+
+    @property
+    def server_tz(self) -> ZoneInfo:
+        """Return SERVER_TZ as a resolved ZoneInfo."""
+        return ZoneInfo(self.SERVER_TZ)
 
     @property
     def database_url(self) -> str:

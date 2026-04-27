@@ -292,6 +292,7 @@ async def update_notification(
             notification.notification_type,
             delivered_at,
             notification.expires_at,
+            scheduled_date=notification.scheduled_date,
         )
 
     db.commit()

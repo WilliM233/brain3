@@ -1285,3 +1285,43 @@ class Rule(Base):
         Index("ix_rules_entity_lookup", "entity_type", "enabled"),
         Index("ix_rules_entity_scoped", "entity_type", "entity_id"),
     )
+
+
+# ---------------------------------------------------------------------------
+# App Devices — FCM registrations for the companion app
+# ---------------------------------------------------------------------------
+
+
+class AppDevice(Base):
+    """FCM-registered companion-app device.
+
+    Phase 2 is single-user: there is no ``user_id`` and dispatch broadcasts
+    to every registered row. ``platform`` future-proofs for APNs (``ios``)
+    even though v2.0.0 only ships Android.
+    """
+
+    __tablename__ = "app_devices"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    fcm_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    platform: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str | None] = mapped_column(String)
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "platform IN ('android', 'ios')",
+            name="ck_app_devices_platform",
+        ),
+    )

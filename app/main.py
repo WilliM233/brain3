@@ -28,6 +28,7 @@ from app.routers import (
     activity,
     artifacts,
     checkins,
+    devices,
     directives,
     domains,
     goals,
@@ -142,4 +143,7 @@ app.include_router(
 )
 app.include_router(
     skills.skill_directives_router, prefix="/api/skills", tags=["Skill Directives"],
+)
+app.include_router(
+    devices.router, prefix="/api/app/devices", tags=["App Devices"],
 )

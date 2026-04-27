@@ -216,6 +216,24 @@ class HabitCompleteResponse(BaseModel):
     source: str
 
 
+# ---------------------------------------------------------------------------
+# Habit Completion History — GET /api/habits/{id}/completions
+# ---------------------------------------------------------------------------
+
+
+class HabitCompletionResponse(BaseModel):
+    """A single completion row, returned by the history endpoint."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    habit_id: UUID
+    completed_at: date
+    source: str
+    notes: str | None = None
+    created_at: datetime
+
+
 from app.schemas.routines import RoutineResponse  # noqa: E402
 
 HabitDetailResponse.model_rebuild()

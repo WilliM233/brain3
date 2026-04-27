@@ -27,6 +27,7 @@ from app.models import Habit, HabitCompletion, Routine
 from app.schemas.habits import (
     HabitCompleteRequest,
     HabitCompleteResponse,
+    HabitCompletionResponse,
     HabitCreate,
     HabitDetailResponse,
     HabitListResponse,
@@ -283,3 +284,36 @@ def complete_habit(
         "streak_was_broken": result.streak_was_broken,
         "source": "individual",
     }
+
+
+# ---------------------------------------------------------------------------
+# Completion history — /api/habits/{habit_id}/completions
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{habit_id}/completions", response_model=list[HabitCompletionResponse],
+)
+def list_habit_completions(
+    habit_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    completed_after: date | None = Query(None),
+    db: Session = Depends(get_db),
+) -> list[HabitCompletion]:
+    """Return recent completion records for a habit, newest first."""
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    query = db.query(HabitCompletion).filter(HabitCompletion.habit_id == habit_id)
+    if completed_after is not None:
+        query = query.filter(HabitCompletion.completed_at > completed_after)
+
+    return (
+        query.order_by(
+            HabitCompletion.completed_at.desc(),
+            HabitCompletion.created_at.desc(),
+        )
+        .limit(limit)
+        .all()
+    )

@@ -27,6 +27,7 @@ from app.models import Domain, HabitCompletion, Routine, RoutineCompletion, Rout
 from app.schemas.routines import (
     RoutineCompleteRequest,
     RoutineCompleteResponse,
+    RoutineCompletionResponse,
     RoutineCreate,
     RoutineDetailResponse,
     RoutineListResponse,
@@ -215,6 +216,30 @@ def complete_routine(
 
     # --- Scripted path (has child habits) ----------------------------------
 
+    # Idempotency check — return existing completion if one exists for this
+    # (routine, date, status) tuple. Cross-status retries on the same date
+    # create separate rows; same-status retries dedup to the existing row.
+    existing_completion = (
+        db.query(RoutineCompletion)
+        .filter(
+            RoutineCompletion.routine_id == routine_id,
+            RoutineCompletion.completed_at == completed_date,
+            RoutineCompletion.status == completion_status,
+        )
+        .first()
+    )
+    if existing_completion:
+        return {
+            "routine_id": routine.id,
+            "completed_date": existing_completion.completed_at,
+            "current_streak": routine.current_streak,
+            "best_streak": routine.best_streak,
+            "streak_was_broken": False,
+            "completion_id": existing_completion.id,
+            "status": existing_completion.status,
+            "habits_completed": [],
+        }
+
     habits_completed: list[UUID] = []
 
     if completion_status == "skipped":
@@ -335,6 +360,41 @@ def _cascade_habits(
         completed_ids.append(habit.id)
 
     return completed_ids
+
+
+# ---------------------------------------------------------------------------
+# Completion history — /api/routines/{routine_id}/completions
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{routine_id}/completions", response_model=list[RoutineCompletionResponse],
+)
+def list_routine_completions(
+    routine_id: UUID,
+    limit: int = Query(10, ge=1, le=100),
+    completed_after: date | None = Query(None),
+    db: Session = Depends(get_db),
+) -> list[RoutineCompletion]:
+    """Return recent completion records for a routine, newest first."""
+    routine = db.query(Routine).filter(Routine.id == routine_id).first()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    query = db.query(RoutineCompletion).filter(
+        RoutineCompletion.routine_id == routine_id,
+    )
+    if completed_after is not None:
+        query = query.filter(RoutineCompletion.completed_at > completed_after)
+
+    return (
+        query.order_by(
+            RoutineCompletion.completed_at.desc(),
+            RoutineCompletion.status.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
 
 
 # ---------------------------------------------------------------------------

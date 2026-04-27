@@ -160,3 +160,22 @@ class RoutineCompleteResponse(BaseModel):
     completion_id: UUID | None = None
     status: str | None = None
     habits_completed: list[UUID] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Routine Completion History — GET /api/routines/{id}/completions
+# ---------------------------------------------------------------------------
+
+
+class RoutineCompletionResponse(BaseModel):
+    """A single routine completion row, returned by the history endpoint."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    routine_id: UUID
+    completed_at: date
+    status: str
+    freeform_note: str | None = None
+    reconciled: bool
+    reconciled_at: datetime | None = None

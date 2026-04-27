@@ -18,9 +18,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
+
+from app.config import settings
 
 CANNED_RESPONSE_DEFAULTS: dict[str, list[str]] = {
     "habit_nudge": [
@@ -110,12 +112,16 @@ def validate_canned_responses(responses: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 EXPIRY_DEFAULTS: dict[str, timedelta] = {
-    "habit_nudge": timedelta(hours=2),
+    "habit_nudge": timedelta(hours=4),
+    # routine_checklist resolves to EOD-local at calc time; the timedelta
+    # here is a fallback used only when scheduled_date is missing.
     "routine_checklist": timedelta(hours=4),
-    "checkin_prompt": timedelta(hours=12),
-    "time_block_reminder": timedelta(hours=1),
+    "checkin_prompt": timedelta(hours=2),
+    # time_block_reminder is floored by block_duration when supplied; default
+    # 30m applies when block_duration is unknown at delivery time.
+    "time_block_reminder": timedelta(minutes=30),
     "deadline_event_alert": timedelta(hours=0),  # special: expires at target deadline
-    "pattern_observation": timedelta(hours=24),
+    "pattern_observation": timedelta(hours=48),
     "stale_work_nudge": timedelta(hours=24),
 }
 
@@ -135,6 +141,9 @@ def calculate_expires_at(
     notification_type: str,
     delivered_at: datetime,
     existing_expires_at: datetime | None = None,
+    *,
+    scheduled_date: date | None = None,
+    block_duration: timedelta | None = None,
 ) -> datetime | None:
     """Calculate the expiry timestamp for a notification at delivery time.
 
@@ -143,6 +152,11 @@ def calculate_expires_at(
 
     - ``deadline_event_alert`` with no override falls back to 24h from delivery
       (the creator *should* have set an explicit ``expires_at``).
+    - ``time_block_reminder``: ``delivered_at + min(30m, block_duration)`` when
+      *block_duration* is supplied; otherwise the 30m default.
+    - ``routine_checklist``: midnight at the start of the day after
+      *scheduled_date*, in ``settings.SERVER_TZ`` (EOD-local). Falls back to
+      the 4h default if *scheduled_date* is not supplied.
     - All other types: ``delivered_at + EXPIRY_DEFAULTS[type]``.
     """
     if existing_expires_at is not None:
@@ -150,6 +164,16 @@ def calculate_expires_at(
 
     if notification_type == "deadline_event_alert":
         return delivered_at + timedelta(hours=24)
+
+    if notification_type == "time_block_reminder":
+        floor = EXPIRY_DEFAULTS["time_block_reminder"]
+        if block_duration is not None:
+            floor = min(floor, block_duration)
+        return delivered_at + floor
+
+    if notification_type == "routine_checklist" and scheduled_date is not None:
+        next_day = scheduled_date + timedelta(days=1)
+        return datetime.combine(next_day, time(0, 0), tzinfo=settings.server_tz)
 
     default_delta = EXPIRY_DEFAULTS.get(notification_type)
     if default_delta is None:

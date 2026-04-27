@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.auth import install_app_bearer_auth
 from app.config import settings
 from app.database import SessionLocal
 from app.routers import (
@@ -57,6 +58,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Bearer auth on /api/app/*. Skipped with a warning when the token is unset
+# (dev convenience) — production must set BRAIN3_APP_BEARER_TOKEN.
+install_app_bearer_auth(app, settings.APP_BEARER_TOKEN)
+
 
 @app.get("/health")
 def health_check() -> dict:
@@ -73,6 +78,17 @@ def health_check() -> dict:
             status_code=503,
             content={"status": "unhealthy", "database": "disconnected"},
         )
+
+
+@app.get("/api/app/health")
+def app_health_check() -> dict:
+    """Authed probe endpoint for the companion app's validation ping.
+
+    Sits behind ``AppBearerAuthMiddleware``. The companion app calls this
+    during URL+token pairing to confirm both that the server is reachable
+    and that the bearer token is valid.
+    """
+    return {"ok": True}
 
 
 app.include_router(domains.router, prefix="/api/domains", tags=["Domains"])

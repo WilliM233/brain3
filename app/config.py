@@ -16,6 +16,7 @@
 
 """Application configuration via Pydantic Settings."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,7 +34,16 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Shared-secret bearer token gating /api/app/* (companion app + scheduler).
+    # Distinct from any MCP token. Unset in dev → middleware skipped with a
+    # startup warning. Required in production.
+    APP_BEARER_TOKEN: str | None = Field(
+        default=None, validation_alias="BRAIN3_APP_BEARER_TOKEN",
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", populate_by_name=True,
+    )
 
     @property
     def database_url(self) -> str:

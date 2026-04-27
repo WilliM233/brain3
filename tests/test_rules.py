@@ -69,12 +69,14 @@ def _persist(db, obj):
 
 def _make_notification(db, **overrides) -> NotificationQueue:
     """Create and persist a NotificationQueue row."""
+    scheduled_at = overrides.get("scheduled_at", datetime.now(timezone.utc))
     defaults = {
         "id": uuid.uuid4(),
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "status": "pending",
-        "scheduled_at": datetime.now(timezone.utc),
+        "scheduled_at": scheduled_at,
+        "scheduled_date": scheduled_at.date(),
         "target_entity_type": "habit",
         "target_entity_id": uuid.uuid4(),
         "message": "Test notification",
@@ -237,12 +239,14 @@ class TestNotificationRuleFK:
     def test_notification_with_nonexistent_rule_id_fails(self, db):
         """Inserting a notification with a non-existent rule_id raises."""
         fake_id = uuid.uuid4()
+        scheduled_at = datetime.now(timezone.utc)
         nq = NotificationQueue(
             id=uuid.uuid4(),
             notification_type="habit_nudge",
             delivery_type="notification",
             status="pending",
-            scheduled_at=datetime.now(timezone.utc),
+            scheduled_at=scheduled_at,
+            scheduled_date=scheduled_at.date(),
             target_entity_type="habit",
             target_entity_id=uuid.uuid4(),
             message="Test",

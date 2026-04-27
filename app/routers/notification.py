@@ -16,7 +16,7 @@
 
 """CRUD endpoints for the Notification Queue."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -101,6 +101,7 @@ def list_notifications(
     scheduled_by: str | None = Query(None),
     scheduled_after: datetime | None = Query(None),
     scheduled_before: datetime | None = Query(None),
+    scheduled_date: date | None = Query(None),
     has_response: bool | None = Query(None),
     rule_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
@@ -128,6 +129,8 @@ def list_notifications(
         query = query.filter(NotificationQueue.scheduled_at >= scheduled_after)
     if scheduled_before is not None:
         query = query.filter(NotificationQueue.scheduled_at < scheduled_before)
+    if scheduled_date is not None:
+        query = query.filter(NotificationQueue.scheduled_date == scheduled_date)
     if has_response is True:
         query = query.filter(NotificationQueue.status == "responded")
     elif has_response is False:

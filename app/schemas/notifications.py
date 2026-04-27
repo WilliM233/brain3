@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -49,6 +49,7 @@ class NotificationCreate(BaseModel):
     notification_type: NotificationType
     delivery_type: DeliveryType = "notification"
     scheduled_at: datetime
+    scheduled_date: date
     target_entity_type: str = Field(min_length=1)
     target_entity_id: UUID
     message: str = Field(min_length=1, max_length=2000)
@@ -106,6 +107,7 @@ class NotificationResponse(BaseModel):
     delivery_type: str
     status: str
     scheduled_at: datetime
+    scheduled_date: date
     target_entity_type: str
     target_entity_id: UUID
     message: str

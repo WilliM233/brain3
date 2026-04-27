@@ -33,6 +33,7 @@ VALID_NOTIFICATION = {
     "notification_type": "habit_nudge",
     "delivery_type": "notification",
     "scheduled_at": "2026-04-15T09:00:00Z",
+    "scheduled_date": "2026-04-15",
     "target_entity_type": "habit",
     "target_entity_id": str(uuid.uuid4()),
     "message": "Time to stretch!",
@@ -165,6 +166,29 @@ class TestCreateNotification:
         data = {
             **VALID_NOTIFICATION,
             "canned_responses": ["x" * 201],
+            "target_entity_id": str(uuid.uuid4()),
+        }
+        resp = client.post(BASE_URL, json=data)
+        assert resp.status_code == 422
+
+    def test_create_missing_scheduled_date_rejected(self, client):
+        """Omitting scheduled_date returns 422 ([2C-02] required field)."""
+        data = {**VALID_NOTIFICATION, "target_entity_id": str(uuid.uuid4())}
+        data.pop("scheduled_date")
+        resp = client.post(BASE_URL, json=data)
+        assert resp.status_code == 422
+        assert "scheduled_date" in resp.text
+
+    def test_create_response_includes_scheduled_date(self, client):
+        """Response payload echoes scheduled_date as ISO date string."""
+        result = make_notification(client, scheduled_date="2026-05-01")
+        assert result["scheduled_date"] == "2026-05-01"
+
+    def test_create_invalid_scheduled_date_format_rejected(self, client):
+        """A non-date string for scheduled_date returns 422."""
+        data = {
+            **VALID_NOTIFICATION,
+            "scheduled_date": "not-a-date",
             "target_entity_id": str(uuid.uuid4()),
         }
         resp = client.post(BASE_URL, json=data)
@@ -356,6 +380,23 @@ class TestListNotifications:
         resp = client.get(BASE_URL, params={"delivery_type": "notification"})
         data = resp.json()
         assert data["count"] == 1
+
+    def test_filter_by_scheduled_date(self, client):
+        """Filter by scheduled_date returns only same-calendar-day rows."""
+        make_notification(
+            client,
+            scheduled_at="2026-04-15T09:00:00Z",
+            scheduled_date="2026-04-15",
+        )
+        make_notification(
+            client,
+            scheduled_at="2026-04-16T09:00:00Z",
+            scheduled_date="2026-04-16",
+        )
+        resp = client.get(BASE_URL, params={"scheduled_date": "2026-04-15"})
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["items"][0]["scheduled_date"] == "2026-04-15"
 
     def test_combined_filters(self, client):
         """Multiple filters combine with AND logic."""

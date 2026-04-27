@@ -53,6 +53,7 @@ def make_notification(client, **overrides) -> dict:
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "scheduled_at": "2026-04-15T09:00:00Z",
+        "scheduled_date": "2026-04-15",
         "target_entity_type": "habit",
         "target_entity_id": str(uuid.uuid4()),
         "message": "Time to stretch!",
@@ -75,11 +76,13 @@ def deliver(client, notification_id: str) -> dict:
 
 def make_db_notification(db, **overrides) -> NotificationQueue:
     """Insert a NotificationQueue row directly for query-level tests."""
+    scheduled_at = overrides.get("scheduled_at", datetime(2026, 4, 15, 9, 0, tzinfo=UTC))
     data = {
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "status": "pending",
-        "scheduled_at": datetime(2026, 4, 15, 9, 0, tzinfo=UTC),
+        "scheduled_at": scheduled_at,
+        "scheduled_date": scheduled_at.date(),
         "target_entity_type": "habit",
         "target_entity_id": uuid.uuid4(),
         "message": "Test notification",

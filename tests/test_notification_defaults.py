@@ -49,6 +49,7 @@ def make_notification(client, **overrides) -> dict:
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "scheduled_at": "2026-04-15T09:00:00Z",
+        "scheduled_date": "2026-04-15",
         "target_entity_type": "habit",
         "target_entity_id": str(uuid.uuid4()),
         "message": "Time to stretch!",

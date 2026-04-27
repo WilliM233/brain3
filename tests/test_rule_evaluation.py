@@ -92,11 +92,13 @@ def _make_task_orm(db, **overrides) -> Task:
 
 def _make_notification_orm(db, **overrides) -> NotificationQueue:
     """Create and persist a notification directly via ORM."""
+    scheduled_at = overrides.get("scheduled_at", datetime.now(tz=UTC))
     defaults = {
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "status": "pending",
-        "scheduled_at": datetime.now(tz=UTC),
+        "scheduled_at": scheduled_at,
+        "scheduled_date": scheduled_at.date(),
         "target_entity_type": "habit",
         "target_entity_id": uuid.uuid4(),
         "message": "Test notification",

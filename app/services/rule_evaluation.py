@@ -361,11 +361,17 @@ def _create_notification(
 
     canned_responses = get_default_responses(rule.notification_type)
 
+    # scheduled_date is the calendar-day anchor used by the companion
+    # app's recent view (Stream C E5). Derived from now.date() — server
+    # TZ in BRAIN runs UTC, so this is the UTC date of `now`. A future
+    # SERVER_TZ setting ([2C-04]) will replace this default if BRAIN
+    # ever runs in a non-UTC tz.
     notification = NotificationQueue(
         notification_type=rule.notification_type,
         delivery_type="notification",
         status="pending",
         scheduled_at=now,
+        scheduled_date=now.date(),
         target_entity_type=entity_type_str,
         target_entity_id=entity.id,
         message=message,

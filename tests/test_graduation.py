@@ -127,12 +127,14 @@ def _create_routine_checklist(
     db, routine_id: uuid.UUID, response: str | None, status: str, days_ago: int = 5
 ) -> NotificationQueue:
     """Insert a routine_checklist notification for a routine."""
+    scheduled_at = datetime.now(tz=UTC) - timedelta(days=days_ago)
     n = NotificationQueue(
         id=uuid.uuid4(),
         notification_type="routine_checklist",
         delivery_type="notification",
         status=status,
-        scheduled_at=datetime.now(tz=UTC) - timedelta(days=days_ago),
+        scheduled_at=scheduled_at,
+        scheduled_date=scheduled_at.date(),
         target_entity_type="routine",
         target_entity_id=routine_id,
         message="Routine checklist time!",
@@ -148,12 +150,14 @@ def _create_notification(
     db, habit_id: uuid.UUID, response: str | None, status: str, days_ago: int = 5
 ) -> NotificationQueue:
     """Insert a notification_queue entry for a habit."""
+    scheduled_at = datetime.now(tz=UTC) - timedelta(days=days_ago)
     n = NotificationQueue(
         id=uuid.uuid4(),
         notification_type="habit_nudge",
         delivery_type="notification",
         status=status,
-        scheduled_at=datetime.now(tz=UTC) - timedelta(days=days_ago),
+        scheduled_at=scheduled_at,
+        scheduled_date=scheduled_at.date(),
         target_entity_type="habit",
         target_entity_id=habit_id,
         message="Time for your habit!",

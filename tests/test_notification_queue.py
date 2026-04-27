@@ -52,12 +52,14 @@ VALID_SCHEDULED_BY = ["system", "claude", "rule"]
 
 def _make_notification(**overrides) -> NotificationQueue:
     """Build a NotificationQueue instance with sensible defaults."""
+    now = datetime.now(timezone.utc)
     defaults = {
         "id": uuid.uuid4(),
         "notification_type": "habit_nudge",
         "delivery_type": "notification",
         "status": "pending",
-        "scheduled_at": datetime.now(timezone.utc),
+        "scheduled_at": now,
+        "scheduled_date": now.date(),
         "target_entity_type": "habit",
         "target_entity_id": uuid.uuid4(),
         "message": "Time to stretch!",
@@ -138,10 +140,12 @@ class TestNotificationQueueModel:
 
     def test_server_defaults_applied(self, db):
         """Server defaults for delivery_type, status, created_at, updated_at are set."""
+        now = datetime.now(timezone.utc)
         n = NotificationQueue(
             id=uuid.uuid4(),
             notification_type="checkin_prompt",
-            scheduled_at=datetime.now(timezone.utc),
+            scheduled_at=now,
+            scheduled_date=now.date(),
             target_entity_type="checkin",
             target_entity_id=uuid.uuid4(),
             message="How are you feeling?",

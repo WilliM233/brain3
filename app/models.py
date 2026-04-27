@@ -1143,6 +1143,7 @@ class NotificationQueue(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
     target_entity_type: Mapped[str] = mapped_column(String, nullable=False)
     target_entity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1202,6 +1203,7 @@ class NotificationQueue(Base):
         Index("ix_nq_rule_traceability", "rule_id"),
         Index("ix_nq_type_filter", "notification_type"),
         Index("ix_nq_scheduled_by", "scheduled_by"),
+        Index("ix_nq_scheduled_date", "scheduled_date"),
     )
 
 
